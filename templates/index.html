@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CKlabs Scheduler</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand glass">
+        <div class="brand-mark">C</div>
+        <div>
+          <div class="eyebrow">Whiteglove Operations</div>
+          <h1>CKlabs Scheduler</h1>
+        </div>
+      </div>
+
+      <section class="form-panel">
+        <div class="section-head">
+          <h2>Book a meeting</h2>
+        </div>
+
+        <form id="meetingForm">
+          <label>
+            Session title
+            <input type="text" id="title" placeholder="Executive support bridge" value="Whiteglove Support Session" />
+          </label>
+
+          <label>
+            Meeting alias
+            <div class="inline-input">
+              <input type="text" id="meetingAlias" maxlength="19" placeholder="" />
+              <button type="button" id="generateAlias" class="secondary">Generate</button>
+            </div>
+          </label>
+
+          <label>
+            Start
+            <input type="datetime-local" id="startTime" required />
+          </label>
+
+          <label>
+            End
+            <input type="datetime-local" id="endTime" required />
+          </label>
+
+          <label>
+            Notes
+            <textarea id="notes" rows="3" placeholder="Chair PIN, customer name, workflow notes"></textarea>
+          </label>
+
+          <div class="section-head slim">
+            <h3>Registered endpoints</h3>
+            <button type="button" id="refreshEndpoints" class="ghost">Refresh</button>
+          </div>
+
+          <div id="endpointList" class="endpoint-list"></div>
+
+          <button type="submit" class="primary wide">Create meeting</button>
+        </form>
+      </section>
+    </aside>
+
+    <main class="content">
+      <header class="topbar glass">
+        <div>
+          <div class="eyebrow">Daily orchestration</div>
+          <h2 id="headerDate">Today</h2>
+        </div>
+        <div class="toolbar">
+          <input type="date" id="dayPicker" />
+          <button class="secondary" id="jumpToday" type="button">Today</button>
+          <select id="exportRange" class="export-select">
+            <option value="selected_day">Export selected day</option>
+            <option value="today">Export today</option>
+            <option value="last_7">Export last 7 days</option>
+            <option value="this_month">Export this month</option>
+            <option value="custom">Custom range</option>
+          </select>
+          <button class="secondary" id="exportMeetings" type="button">Export CSV</button>
+        </div>
+      </header>
+
+      <section class="stats-row">
+        <div class="stat scheduled">
+          <span>Scheduled</span>
+          <strong id="countScheduled">0</strong>
+        </div>
+        <div class="stat yellow">
+          <span>About to start</span>
+          <strong id="countWarning">0</strong>
+        </div>
+        <div class="stat green">
+          <span>Started</span>
+          <strong id="countStarted">0</strong>
+        </div>
+        <div class="stat blue">
+          <span>Ended</span>
+          <strong id="countEnded">0</strong>
+        </div>
+      </section>
+
+      <section class="timeline-wrap glass">
+        <div class="section-head">
+          <div>
+            <h2>Timeline</h2>
+            <p>Three-hour view centered one hour before now.</p>
+          </div>
+          <div class="toolbar">
+            <button class="ghost" id="timelineBack" type="button">←</button>
+            <button class="ghost" id="timelineNow" type="button">Now</button>
+            <button class="ghost" id="timelineForward" type="button">→</button>
+          </div>
+        </div>
+        <div id="timelineHours" class="timeline-hours"></div>
+        <div id="timelineCanvas" class="timeline-canvas"></div>
+      </section>
+
+      <section class="meeting-list-wrap glass">
+        <div class="section-head">
+          <h2>Meeting queue</h2>
+          <p>Hover timeline cards for actions or manage meetings below.</p>
+        </div>
+        <div id="meetingCards" class="meeting-cards"></div>
+      </section>
+    </main>
+  </div>
+
+  <template id="endpointTemplate">
+    <label class="endpoint-item">
+      <input type="checkbox" class="endpoint-check" />
+      <div>
+        <strong class="endpoint-name"></strong>
+        <div class="endpoint-sub"></div>
+      </div>
+    </label>
+  </template>
+
+  <dialog id="editDialog" class="edit-dialog">
+    <form method="dialog" class="edit-box">
+      <div class="section-head">
+        <h3>Edit meeting endpoints</h3>
+        <button type="button" id="closeEdit" class="ghost">Close</button>
+      </div>
+      <input type="hidden" id="editMeetingId" />
+      <div id="editEndpointList" class="endpoint-list light-list"></div>
+      <label>
+        Notes
+        <textarea id="editNotes" rows="3"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="saveEdit" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="exportDialog" class="edit-dialog">
+    <form method="dialog" class="edit-box">
+      <div class="section-head">
+        <h3>Export meeting report</h3>
+        <button type="button" id="closeExport" class="ghost">Close</button>
+      </div>
+      <label>
+        Start date
+        <input type="date" id="exportStartDate" />
+      </label>
+      <label>
+        End date
+        <input type="date" id="exportEndDate" />
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="runCustomExport" class="primary">Export CSV</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    window.APP_ROOT = {{ request.script_root|tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
