@@ -1,0 +1,27 @@
+[Unit]
+Description=CKlabs Scheduler Web Application
+After=network.target
+
+[Service]
+Type=simple
+User=cklabscheduler
+Group=cklabscheduler
+WorkingDirectory=/opt/cklabScheduler
+EnvironmentFile=/etc/cklabScheduler/cklabScheduler.env
+ExecStart=/opt/cklabScheduler/venv/bin/gunicorn \
+    --bind 127.0.0.1:5080 \
+    --workers 2 \
+    --threads 4 \
+    --worker-class gthread \
+    --env SCRIPT_NAME=/cklabScheduler \
+    --access-logfile - \
+    --error-logfile - \
+    wsgi:application
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cklab-scheduler-web
+
+[Install]
+WantedBy=multi-user.target

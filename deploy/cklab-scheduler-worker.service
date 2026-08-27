@@ -1,0 +1,19 @@
+[Unit]
+Description=CKlabs Scheduler Worker (meeting start/end automation)
+After=network.target
+
+[Service]
+Type=simple
+User=cklabscheduler
+Group=cklabscheduler
+WorkingDirectory=/opt/cklabScheduler
+EnvironmentFile=/etc/cklabScheduler/cklabScheduler.env
+ExecStart=/opt/cklabScheduler/venv/bin/python worker.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cklab-scheduler-worker
+
+[Install]
+WantedBy=multi-user.target
