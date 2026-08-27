@@ -86,10 +86,10 @@ if id "${SVC_USER}" &>/dev/null; then
         fail "Shell is '${SHELL_VAL}' (expected /usr/sbin/nologin)"
     fi
     HOME_VAL="$(getent passwd "${SVC_USER}" | cut -d: -f6)"
-    if [[ "${HOME_VAL}" == "/" || -z "${HOME_VAL}" ]]; then
-        ok "No home directory"
+    if [[ "${HOME_VAL}" == "/" || "${HOME_VAL}" == "/nonexistent" || -z "${HOME_VAL}" ]]; then
+        ok "No home directory (home: ${HOME_VAL:-unset})"
     else
-        warn "Home directory set to '${HOME_VAL}' (expected none)"
+        warn "Home directory set to '${HOME_VAL}' (expected /nonexistent)"
     fi
 else
     fail "User '${SVC_USER}' does not exist"
@@ -303,10 +303,10 @@ chk "Apache config file exists" test -f /etc/apache2/sites-available/cklabschedu
 # Spot-check critical directives in the installed config
 APACHE_CONF=/etc/apache2/sites-available/cklabscheduler.conf
 if [[ -f "${APACHE_CONF}" ]]; then
-    if grep -q 'ProxyPass .*/cklabScheduler/ http://127.0.0.1:5080/' "${APACHE_CONF}" 2>/dev/null; then
-        ok "ProxyPass /cklabScheduler/ → 127.0.0.1:5080/ (trailing slashes correct)"
+    if grep -q 'ProxyPass .*/cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/' "${APACHE_CONF}" 2>/dev/null; then
+        ok "ProxyPass /cklabScheduler/ → 127.0.0.1:5080/cklabScheduler/ (prefix preserved)"
     else
-        fail "ProxyPass directive missing or incorrect in Apache config"
+        fail "ProxyPass target must be http://127.0.0.1:5080/cklabScheduler/ (prefix preservation required for Gunicorn SCRIPT_NAME)"
     fi
     if grep -q 'ProxyPassReverse.*/cklabScheduler/' "${APACHE_CONF}" 2>/dev/null; then
         ok "ProxyPassReverse /cklabScheduler/ present"

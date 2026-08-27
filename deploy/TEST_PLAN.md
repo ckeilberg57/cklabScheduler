@@ -103,8 +103,9 @@ Work through each prompt. Refer to the table below for expected inputs:
 The installer should complete without errors and print:
 
 ```
-══ Health check ══
+[16/16] Health check
   Waiting for services to initialise...
+
   ✓ Installation complete.
 
   Application URL : https://<SERVER>/cklabScheduler/
@@ -134,7 +135,7 @@ The script validates:
 - Python venv with all five packages
 - Both systemd services active and enabled
 - Port 5080 bound to 127.0.0.1
-- Apache: site enabled, ProxyPass with trailing slashes, RedirectMatch, modules
+- Apache: site enabled, ProxyPass with prefix preserved (`/cklabScheduler/ → :5080/cklabScheduler/`), RedirectMatch, modules
 - Health endpoint returns HTTP 200 with `ok=true`
 - SQLite: WAL mode, four tables, fresh heartbeat
 
@@ -165,6 +166,24 @@ curl -sk -o /dev/null -w '%{http_code} %{redirect_url}\n' \
 **Expected:** `301 https://<SERVER>/cklabScheduler/`
 
 ### 3.3.3 Health endpoint
+
+> **Architecture note — ProxyPass prefix preservation (r3 fix)**
+>
+> Apache forwards `/cklabScheduler/...` to `http://127.0.0.1:5080/cklabScheduler/...`
+> (prefix preserved). Gunicorn's `--env SCRIPT_NAME=/cklabScheduler` strips the prefix
+> before Flask sees the request. If the backend URL were `http://127.0.0.1:5080/` instead,
+> Gunicorn would receive `/api/health` without the prefix, fail to split on `/cklabScheduler`,
+> and return HTTP 500 (IndexError in gunicorn/http/wsgi.py) before Flask is reached.
+>
+> **Regression check** — both of these must succeed:
+> ```bash
+> # Through Apache (browser-style path)
+> curl -sk "https://<SERVER>/cklabScheduler/api/health" | python3 -m json.tool
+> # Direct to Gunicorn using the preserved path (as Apache forwards it)
+> curl -s  "http://127.0.0.1:5080/cklabScheduler/api/health"
+> ```
+> The second curl must also return valid JSON, not a 500. If it returns 500, the
+> `deploy/cklab-scheduler-web.service` `SCRIPT_NAME` or the Apache ProxyPass is misconfigured.
 
 ```bash
 curl -sk "https://<SERVER>/cklabScheduler/api/health" | python3 -m json.tool
@@ -512,7 +531,16 @@ sqlite3 /var/lib/cklabScheduler/scheduler.db "SELECT COUNT(*) FROM meetings;"
 
 # Record the current SECRET_KEY (first 8 chars only — do not expose full key)
 grep '^SECRET_KEY=' /etc/cklabScheduler/cklabScheduler.env | cut -c1-20
+
+# Record current Apache ProxyPass target (should change after r2 → r3 upgrade)
+grep -E 'ProxyPass[^R]' /etc/apache2/sites-available/cklabscheduler.conf
 ```
+
+For an r2 installation the ProxyPass line will show:
+```
+    ProxyPass        /cklabScheduler/ http://127.0.0.1:5080/
+```
+After upgrade it must show `http://127.0.0.1:5080/cklabScheduler/`.
 
 ### 3.6.2 Simulate a code update
 
@@ -558,10 +586,23 @@ bash deploy/upgrade.sh
   Schema up to date.
 ══ Updating systemd unit files ══
   Unit files updated and daemon reloaded.
+══ Updating Apache configuration ══
+  Detected r2 ProxyPass (http://127.0.0.1:5080/) — applying r3 migration...
+  Backup: /etc/apache2/sites-available/cklabscheduler.conf.bak.<TIMESTAMP>
+  ProxyPass lines updated. Validating new configuration...
+  Syntax OK
+  Apache configuration validated and reloaded.
 ══ Starting services ══
   Both services started.
 ══ Health check ══
   ✓ Upgrade complete.
+```
+
+If the system already had the r3 ProxyPass (e.g., a repeated upgrade), the Apache step
+will instead print:
+```
+══ Updating Apache configuration ══
+  ProxyPass already uses r3 prefix-preserved format — no change needed.
 ```
 
 ### 3.6.4 Verify post-upgrade state
@@ -603,6 +644,73 @@ ls -lh /var/lib/cklabScheduler/scheduler.db.bak.*
 ```
 
 **Expected:** One `.bak.<TIMESTAMP>` file created just before the upgrade.
+
+### 3.6.6 Verify Apache ProxyPass migration (r2 → r3)
+
+Confirm the Apache config was surgically updated:
+
+```bash
+# ProxyPass target must now include the prefix
+grep -E 'ProxyPass[^R]' /etc/apache2/sites-available/cklabscheduler.conf
+```
+
+**Expected (r3 format):**
+```
+    ProxyPass        /cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/
+```
+
+Confirm the Apache config backup was created:
+
+```bash
+ls -lh /etc/apache2/sites-available/cklabscheduler.conf.bak.*
+```
+
+**Expected:** One `.bak.<TIMESTAMP>` file from the upgrade run.
+
+Test that the corrected path reaches Gunicorn directly (bypassing Apache):
+
+```bash
+# Apache forwards this exact path; Gunicorn must respond with valid JSON
+curl -s http://127.0.0.1:5080/cklabScheduler/api/health
+```
+
+**Expected:** `{"ok": true, ...}` — not an HTTP 500 / IndexError.
+
+Run `verify_install.sh` to confirm all checks still pass:
+
+```bash
+sudo bash /root/cklabScheduler-v2/deploy/verify_install.sh <SERVER>
+```
+
+**Pass criteria:**
+- `ProxyPass /cklabScheduler/ → 127.0.0.1:5080/cklabScheduler/ (prefix preserved)` ✓
+- Apache config backup file exists under `sites-available/`
+- Direct Gunicorn curl returns `"ok": true`
+- `verify_install.sh` exits 0
+
+### 3.6.7 Apache rollback on configtest failure (optional destructive test)
+
+To verify the automatic rollback path, temporarily corrupt the Apache config after
+backing it up, trigger `upgrade.sh`, and observe the restore:
+
+```bash
+# On server — simulate a broken config BEFORE running upgrade from a clean r2 state
+# WARNING: this test intentionally breaks Apache temporarily; restore immediately after.
+
+# Manually corrupt the config
+echo 'InvalidDirective' >> /etc/apache2/sites-available/cklabscheduler.conf
+
+# Run upgrade from an r2 snapshot (requires resetting ProxyPass to r2 first)
+# Then observe upgrade.sh output — it must print:
+#   ERROR: apache2ctl configtest failed — restoring backup.
+#   FATAL: Apache configuration migration failed. Restored from <backup>.
+
+# Verify the file was restored
+apache2ctl configtest   # must return Syntax OK
+```
+
+**Pass criterion:** upgrade.sh exits non-zero, prints a `FATAL:` message naming the
+backup path, and the live Apache config is identical to the pre-migration state.
 
 ---
 
@@ -735,12 +843,17 @@ Mark each item ✓ PASS, ✗ FAIL, or N/A before signing off on Phase 3.
 ### Upgrade
 
 - [ ] 3.6.3 — `upgrade.sh` completed without errors
+- [ ] 3.6.3 — Apache migration step printed "validated and reloaded" (r2 → r3)
 - [ ] 3.6.4 — `cklabScheduler.env` modification time unchanged
 - [ ] 3.6.4 — `SECRET_KEY` unchanged (env file was not overwritten)
 - [ ] 3.6.4 — Code change present in `/opt/cklabScheduler/worker.py`
 - [ ] 3.6.4 — Both services active post-upgrade
 - [ ] 3.6.4 — Health check `ok: True` post-upgrade
 - [ ] 3.6.5 — Database backup file created
+- [ ] 3.6.6 — Apache ProxyPass shows `http://127.0.0.1:5080/cklabScheduler/` (r3 format)
+- [ ] 3.6.6 — Apache config backup created under `sites-available/`
+- [ ] 3.6.6 — Direct `curl http://127.0.0.1:5080/cklabScheduler/api/health` returns `ok: true`
+- [ ] 3.6.6 — `verify_install.sh` passes ProxyPass check post-upgrade
 
 ### Uninstall
 

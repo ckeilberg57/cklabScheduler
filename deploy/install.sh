@@ -20,30 +20,43 @@ KEY_FILE="/etc/ssl/private/cklabscheduler.key"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# ── Progress tracking ─────────────────────────────────────────────────────────
+_STEP=0
+_TOTAL=16
+STAGE="startup"
+
+trap 'printf "\n\033[31mFATAL:\033[0m Installation failed during: %s (line %d)\nRerun the installer to retry.\n" "${STAGE}" "${BASH_LINENO[0]}" >&2' ERR
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
-die()  { echo; echo "FATAL: $*" >&2; exit 1; }
-info() { echo; printf '══ %s ══\n' "$*"; }
+die()  { printf '\n\033[31mFATAL:\033[0m %s\n' "$*" >&2; exit 1; }
+info() {
+    _STEP=$((_STEP + 1))
+    STAGE="$*"
+    printf '\n\033[1m[%d/%d] %s\033[0m\n' "${_STEP}" "${_TOTAL}" "${STAGE}"
+}
 
 # All prompt helpers read from /dev/tty so they work even if stdin is a pipe.
 # They write the collected value to stdout; callers capture with $(...).
 # Prompt text goes to /dev/tty (never captured).
 
-_tty_print() { printf '%s' "$*" > /dev/tty; }
+_tty_print() { printf '%s' "$*" > /dev/tty 2>/dev/null || true; }
 
 prompt_required() {
     local prompt="$1" reply
     while true; do
         _tty_print "  ${prompt}: "
-        read -r reply < /dev/tty
+        read -r reply < /dev/tty \
+            || die "Cannot read from terminal (/dev/tty). Run the installer interactively."
         [[ -n "${reply}" ]] && { printf '%s' "${reply}"; return 0; }
-        echo "  (required — please enter a value)" > /dev/tty
+        echo "  (required — please enter a value)" > /dev/tty 2>/dev/null || true
     done
 }
 
 prompt_default() {
     local prompt="$1" default="$2" reply
     _tty_print "  ${prompt} [${default}]: "
-    read -r reply < /dev/tty
+    read -r reply < /dev/tty \
+        || die "Cannot read from terminal (/dev/tty). Run the installer interactively."
     printf '%s' "${reply:-${default}}"
 }
 
@@ -52,10 +65,11 @@ prompt_secret() {
     local prompt="$1" reply
     while true; do
         _tty_print "  ${prompt}: "
-        read -rs reply < /dev/tty
-        printf '\n' > /dev/tty
+        read -rs reply < /dev/tty \
+            || die "Cannot read from terminal (/dev/tty). Run the installer interactively."
+        printf '\n' > /dev/tty 2>/dev/null || true
         [[ -n "${reply}" ]] && { printf '%s' "${reply}"; return 0; }
-        echo "  (required — please enter a value)" > /dev/tty
+        echo "  (required — please enter a value)" > /dev/tty 2>/dev/null || true
     done
 }
 
@@ -63,15 +77,15 @@ prompt_secret_optional() {
     # Optional secret — not echoed; empty string accepted
     local prompt="$1" reply
     _tty_print "  ${prompt} (press Enter to skip): "
-    read -rs reply < /dev/tty
-    printf '\n' > /dev/tty
+    read -rs reply < /dev/tty || true
+    printf '\n' > /dev/tty 2>/dev/null || true
     printf '%s' "${reply}"
 }
 
 prompt_optional() {
     local prompt="$1" reply
     _tty_print "  ${prompt} (press Enter to skip): "
-    read -r reply < /dev/tty
+    read -r reply < /dev/tty || true
     printf '%s' "${reply}"
 }
 
@@ -79,7 +93,7 @@ prompt_yesno() {
     # Returns 0 for yes, 1 for no.  Use only in 'if' or '&&' contexts.
     local prompt="$1" default="${2:-N}" reply
     _tty_print "  ${prompt} [${default}]: "
-    read -r reply < /dev/tty
+    read -r reply < /dev/tty || true
     reply="${reply:-${default}}"
     [[ "${reply,,}" =~ ^y(es)?$ ]]
 }
@@ -92,6 +106,14 @@ write_env_line() {
     val="${val//\"/\\\"}"
     printf '%s="%s"\n' "${key}" "${val}"
 }
+
+# ── Multiplexer recommendation ────────────────────────────────────────────────
+if [[ -z "${STY:-}" && -z "${TMUX:-}" ]]; then
+    printf '\n\033[33mTIP:\033[0m This installation takes several minutes and will prompt for\n'
+    printf '    Pexip credentials.  To protect against SSH disconnects, consider\n'
+    printf '    running inside screen or tmux:\n'
+    printf '      screen -S cklabinstall   (then re-run this script inside screen)\n\n'
+fi
 
 # ── 1. Pre-flight ────────────────────────────────────────────────────────────
 info "Pre-flight checks"
@@ -107,6 +129,9 @@ else
     die "/etc/os-release not found. Ubuntu 24.04 required."
 fi
 
+[[ -c /dev/tty ]] \
+    || die "No controlling terminal (/dev/tty). Interactive prompts require a TTY. Use screen or tmux for SSH sessions."
+
 echo "  Checking internet connectivity..."
 curl --silent --max-time 10 --head https://pypi.org > /dev/null \
     || die "No internet access. Required to install Python dependencies."
@@ -115,22 +140,31 @@ echo "  Pre-flight checks passed."
 
 # ── 2. System packages ───────────────────────────────────────────────────────
 info "Installing system packages"
+echo "  Running apt-get update..."
 apt-get update -qq
-apt-get install -y python3.12 python3.12-venv python3-tzdata apache2 openssl rsync
+echo "  Installing packages: python3.12, python3.12-venv, tzdata, sqlite3, curl, apache2, openssl, rsync"
+apt-get install -y python3.12 python3.12-venv tzdata sqlite3 curl apache2 openssl rsync
 echo "  Packages installed."
 
 # ── 3. Apache modules ────────────────────────────────────────────────────────
 info "Enabling Apache modules"
 a2enmod proxy proxy_http ssl headers
-echo "  Modules enabled."
+echo "  Modules enabled: proxy proxy_http ssl headers"
 
 # ── 4. Service account ───────────────────────────────────────────────────────
 info "Service account"
 if id "${SVC_USER}" &>/dev/null; then
     echo "  Account '${SVC_USER}' already exists — skipping creation."
+    # Ensure home field is /nonexistent (fix for accounts created without --home-dir flag)
+    CURRENT_HOME="$(getent passwd "${SVC_USER}" | cut -d: -f6)"
+    if [[ "${CURRENT_HOME}" != "/nonexistent" ]]; then
+        usermod --home /nonexistent "${SVC_USER}"
+        echo "  Corrected home directory field to /nonexistent."
+    fi
 else
-    useradd --system --no-create-home --shell /usr/sbin/nologin "${SVC_USER}"
-    echo "  Account '${SVC_USER}' created."
+    useradd --system --no-create-home --home-dir /nonexistent \
+            --shell /usr/sbin/nologin "${SVC_USER}"
+    echo "  Account '${SVC_USER}' created (home: /nonexistent, shell: /usr/sbin/nologin)."
 fi
 
 # ── 5. Directories ───────────────────────────────────────────────────────────
@@ -174,13 +208,16 @@ echo "  Files copied. Ownership: root:${SVC_USER}; dirs 750, files 640."
 # ── 7. Python virtual environment ────────────────────────────────────────────
 info "Python virtual environment"
 if [[ ! -d "${VENV}" ]]; then
+    echo "  Creating venv at ${VENV}..."
     python3.12 -m venv "${VENV}"
-    echo "  New venv created at ${VENV}."
+    echo "  Venv created."
 else
     echo "  Existing venv found — reusing."
 fi
-"${VENV}/bin/pip" install --quiet --upgrade pip
-"${VENV}/bin/pip" install --quiet -r "${APP_DIR}/requirements.txt"
+echo "  Upgrading pip (this may take a moment)..."
+"${VENV}/bin/pip" install --upgrade --no-input pip
+echo "  Installing application dependencies (this may take 1-2 minutes)..."
+"${VENV}/bin/pip" install --no-input -r "${APP_DIR}/requirements.txt"
 echo "  Dependencies installed."
 
 # ── 8. Database migration ────────────────────────────────────────────────────
@@ -189,13 +226,13 @@ if prompt_yesno "Migrate an existing scheduler.db?" "N"; then
     while true; do
         EXISTING_DB="$(prompt_required "Path to existing scheduler.db")"
         if [[ ! -f "${EXISTING_DB}" ]]; then
-            echo "  File not found: ${EXISTING_DB}" > /dev/tty
+            echo "  File not found: ${EXISTING_DB}" > /dev/tty 2>/dev/null || true
             continue
         fi
         if sqlite3 "${EXISTING_DB}" "SELECT COUNT(*) FROM meetings;" &>/dev/null; then
             break
         fi
-        echo "  Not a valid scheduler.db (missing 'meetings' table)." > /dev/tty
+        echo "  Not a valid scheduler.db (missing 'meetings' table)." > /dev/tty 2>/dev/null || true
     done
     TIMESTAMP="$(date +%Y%m%dT%H%M%S)"
     BACKUP="${EXISTING_DB}.pre-install-${TIMESTAMP}.bak"
@@ -210,7 +247,7 @@ else
 fi
 
 # ── 9. Interactive configuration ─────────────────────────────────────────────
-info "Configuration"
+info "Configuration (interactive)"
 echo "  Values marked [hidden] are not echoed to the terminal."
 echo
 
@@ -225,7 +262,8 @@ CONTROL_DISPLAY_NAME="$(prompt_default "Scheduler display name in Pexip" "Schedu
 DIAL_PROTOCOL="$(prompt_default       "Dial protocol (auto/sip/h323/rtmp/mssip)" "auto")"
 echo
 _tty_print "  WebRTC base URL (press Enter to use https://${COMMAND_HOST}/webapp3/m/): "
-read -r WEBRTC_BASE_URL < /dev/tty
+read -r WEBRTC_BASE_URL < /dev/tty || true
+WEBRTC_BASE_URL="${WEBRTC_BASE_URL:-https://${COMMAND_HOST}/webapp3/m/}"
 
 echo
 echo "── Scheduler ──────────────────────────────────────────────────────────"
@@ -250,8 +288,8 @@ O365_SAVE_TO_SENT_ITEMS_VAL="true"
 
 if prompt_yesno "Enable Microsoft 365 email integration?" "N"; then
     O365_ENABLED_VAL="true"
-    O365_TENANT_ID="$(prompt_secret  "O365 Tenant ID [hidden]")"
-    O365_CLIENT_ID="$(prompt_required "O365 Application (Client) ID")"
+    O365_TENANT_ID="$(prompt_secret   "O365 Tenant ID [hidden]")"
+    O365_CLIENT_ID="$(prompt_required  "O365 Application (Client) ID")"
     O365_CLIENT_SECRET="$(prompt_secret "O365 Client Secret [hidden]")"
     O365_FROM_MAILBOX="$(prompt_required "O365 From mailbox address")"
     O365_EMAIL_SUBJECT="$(prompt_default  "Email subject" "Your Secure Virtual Consultation")"
@@ -285,7 +323,8 @@ echo "    2) Generate a self-signed certificate (lab/internal use only)"
 TLS_OPTION=""
 while [[ "${TLS_OPTION}" != "1" && "${TLS_OPTION}" != "2" ]]; do
     _tty_print "  Select [1/2]: "
-    read -r TLS_OPTION < /dev/tty
+    read -r TLS_OPTION < /dev/tty \
+        || die "Cannot read from terminal (/dev/tty). Run the installer interactively."
 done
 
 if [[ "${TLS_OPTION}" == "1" ]]; then
@@ -295,7 +334,7 @@ if [[ "${TLS_OPTION}" == "1" ]]; then
         if [[ -f "${USER_CERT}" && -f "${USER_KEY}" ]]; then
             break
         fi
-        echo "  One or both paths not found — please check and try again." > /dev/tty
+        echo "  One or both paths not found — please check and try again." > /dev/tty 2>/dev/null || true
     done
     cp "${USER_CERT}" "${CERT_FILE}"
     cp "${USER_KEY}"  "${KEY_FILE}"
@@ -373,7 +412,7 @@ chmod 640 "${ENV_FILE}"
 
 echo "  Written: ${ENV_FILE} (root:${SVC_USER} 640)"
 
-# ── 12. Database initialisation ───────────────────────────────────────────────
+# ── 11. Database initialisation ───────────────────────────────────────────────
 info "Initializing database schema"
 (
     cd "${APP_DIR}"
@@ -384,14 +423,14 @@ chown "${SVC_USER}:${SVC_USER}" "${DB_PATH}" 2>/dev/null || true
 chmod 640 "${DB_PATH}" 2>/dev/null || true
 echo "  Schema ready at ${DB_PATH}."
 
-# ── 13. Systemd unit files ───────────────────────────────────────────────────
+# ── 12. Systemd unit files ───────────────────────────────────────────────────
 info "Installing systemd unit files"
 cp "${SCRIPT_DIR}/cklab-scheduler-web.service"    /etc/systemd/system/
 cp "${SCRIPT_DIR}/cklab-scheduler-worker.service" /etc/systemd/system/
 systemctl daemon-reload
 echo "  Unit files installed and daemon reloaded."
 
-# ── 14. Apache virtual host ───────────────────────────────────────────────────
+# ── 13. Apache virtual host ───────────────────────────────────────────────────
 info "Configuring Apache virtual host"
 cat > /etc/apache2/sites-available/cklabscheduler.conf <<APACHECONF
 # cklabScheduler Apache virtual host
@@ -413,12 +452,20 @@ cat > /etc/apache2/sites-available/cklabscheduler.conf <<APACHECONF
     # Exact redirect: /cklabScheduler → /cklabScheduler/
     RedirectMatch permanent ^/cklabScheduler$ /cklabScheduler/
 
-    # Reverse proxy to Gunicorn.  Trailing slashes on both sides required.
-    # Apache strips /cklabScheduler/ prefix; Gunicorn --env SCRIPT_NAME=/cklabScheduler
-    # restores it for Werkzeug URL generation.
+    # Reverse proxy to Gunicorn.  The /cklabScheduler/ prefix is preserved on
+    # both sides so Gunicorn's SCRIPT_NAME processing can split the path correctly.
+    #
+    # Request flow:
+    #   Browser   GET /cklabScheduler/api/health
+    #   Apache    forwards /cklabScheduler/api/health to http://127.0.0.1:5080/cklabScheduler/api/health
+    #   Gunicorn  SCRIPT_NAME=/cklabScheduler → strips prefix → PATH_INFO=/api/health
+    #   Flask     routes /api/health; request.script_root=/cklabScheduler
+    #
+    # DO NOT change this to http://127.0.0.1:5080/ — that strips the prefix and
+    # causes Gunicorn IndexError in http/wsgi.py.
     ProxyPreserveHost On
-    ProxyPass        /cklabScheduler/ http://127.0.0.1:5080/
-    ProxyPassReverse /cklabScheduler/ http://127.0.0.1:5080/
+    ProxyPass        /cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/
+    ProxyPassReverse /cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/
 
     RequestHeader set X-Forwarded-Proto "https"
 
@@ -428,9 +475,39 @@ cat > /etc/apache2/sites-available/cklabscheduler.conf <<APACHECONF
 APACHECONF
 
 a2ensite cklabscheduler
-apache2ctl configtest || die "Apache config test failed — check /etc/apache2/sites-available/cklabscheduler.conf"
+apache2ctl configtest \
+    || die "Apache config test failed — check /etc/apache2/sites-available/cklabscheduler.conf"
 systemctl reload apache2
 echo "  Apache configured for ${SERVER_HOSTNAME}."
+
+# ── 14. Pre-start validation ─────────────────────────────────────────────────
+info "Pre-start validation"
+
+[[ -d "${VENV}" ]] \
+    || die "Virtual environment missing: ${VENV}"
+echo "  ✓ Virtual environment: ${VENV}"
+
+[[ -x "${VENV}/bin/gunicorn" ]] \
+    || die "Gunicorn not found or not executable: ${VENV}/bin/gunicorn — check requirements.txt"
+GUNICORN_VER="$("${VENV}/bin/gunicorn" --version 2>&1 || echo 'unknown')"
+echo "  ✓ Gunicorn: ${GUNICORN_VER}"
+
+"${VENV}/bin/python" -c "import flask, gunicorn, apscheduler, dotenv, requests" \
+    || die "Python module import test failed — run: ${VENV}/bin/pip list"
+echo "  ✓ Python modules import successfully"
+
+[[ -f "${ENV_FILE}" ]] \
+    || die "Configuration file missing: ${ENV_FILE}"
+ENV_PERM_VAL="$(stat -c '%a' "${ENV_FILE}")"
+[[ "${ENV_PERM_VAL}" == "640" ]] \
+    || die "Config file permissions are ${ENV_PERM_VAL} (expected 640)"
+echo "  ✓ Configuration file: ${ENV_FILE} (${ENV_PERM_VAL})"
+
+[[ -f "${DB_PATH}" ]] \
+    || die "Database not found: ${DB_PATH} — check database init step"
+echo "  ✓ Database: ${DB_PATH}"
+
+echo "  All pre-start checks passed."
 
 # ── 15. Enable and start services ────────────────────────────────────────────
 info "Starting services"

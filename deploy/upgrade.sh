@@ -80,8 +80,10 @@ echo "  Files replaced. Ownership: root:${SVC_USER}; dirs 750, files 640."
 
 # ── 6. Update Python dependencies ────────────────────────────────────────────
 info "Updating Python dependencies"
-"${VENV}/bin/pip" install --quiet --upgrade pip
-"${VENV}/bin/pip" install --quiet --upgrade -r "${APP_DIR}/requirements.txt"
+echo "  Upgrading pip..."
+"${VENV}/bin/pip" install --upgrade --no-input pip
+echo "  Updating application dependencies..."
+"${VENV}/bin/pip" install --upgrade --no-input -r "${APP_DIR}/requirements.txt"
 echo "  Dependencies updated."
 
 # ── 7. Run database migrations ────────────────────────────────────────────────
@@ -102,13 +104,56 @@ cp "${SCRIPT_DIR}/cklab-scheduler-worker.service" /etc/systemd/system/
 systemctl daemon-reload
 echo "  Unit files updated and daemon reloaded."
 
-# ── 9. Start both services ────────────────────────────────────────────────────
+# ── 9. Apache configuration migration (r2 → r3 ProxyPass fix) ────────────────
+info "Updating Apache configuration"
+APACHE_CONF="/etc/apache2/sites-available/cklabscheduler.conf"
+#
+# Detection:
+#   r3 (correct): ProxyPass /cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/
+#   r2 (broken):  ProxyPass /cklabScheduler/ http://127.0.0.1:5080/   ← no prefix
+#
+if [[ ! -f "${APACHE_CONF}" ]]; then
+    echo "  No config at ${APACHE_CONF} — skipping."
+elif grep -qE 'ProxyPass[[:space:]]*/cklabScheduler/[[:space:]]+http://127\.0\.0\.1:5080/cklabScheduler/' "${APACHE_CONF}"; then
+    echo "  ProxyPass already uses r3 prefix-preserved format — no change needed."
+elif grep -qE 'ProxyPass[[:space:]]*/cklabScheduler/[[:space:]]+http://127\.0\.0\.1:5080/[[:space:]]*$' "${APACHE_CONF}"; then
+    # r2 broken ProxyPass detected: target is http://127.0.0.1:5080/ with no path prefix.
+    # Gunicorn receives /api/health instead of /cklabScheduler/api/health and cannot
+    # split on SCRIPT_NAME, producing IndexError before Flask is ever reached.
+    # Fix: surgical sed on lines containing /cklabScheduler/ only.
+    echo "  Detected r2 ProxyPass (http://127.0.0.1:5080/) — applying r3 migration..."
+    APACHE_CONF_BAK="${APACHE_CONF}.bak.$(date +%Y%m%dT%H%M%S)"
+    cp "${APACHE_CONF}" "${APACHE_CONF_BAK}"
+    echo "  Backup: ${APACHE_CONF_BAK}"
+    sed -i \
+        '/\/cklabScheduler\// s|http://127\.0\.0\.1:5080/[[:space:]]*$|http://127.0.0.1:5080/cklabScheduler/|' \
+        "${APACHE_CONF}"
+    echo "  ProxyPass lines updated. Validating new configuration..."
+    if apache2ctl configtest; then
+        systemctl reload apache2
+        echo "  Apache configuration validated and reloaded."
+    else
+        echo "  ERROR: apache2ctl configtest failed — restoring backup."
+        cp "${APACHE_CONF_BAK}" "${APACHE_CONF}"
+        die "Apache configuration migration failed. Restored from ${APACHE_CONF_BAK}. Review output above."
+    fi
+else
+    echo "  WARNING: ProxyPass pattern not recognized (possibly a custom configuration)."
+    echo "  No changes made to ${APACHE_CONF}."
+    echo
+    echo "  To apply the r3 prefix-preservation fix manually, update ${APACHE_CONF}:"
+    echo "    ProxyPass        /cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/"
+    echo "    ProxyPassReverse /cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/"
+    echo "  Then reload: apache2ctl configtest && systemctl reload apache2"
+fi
+
+# ── 10. Start both services ───────────────────────────────────────────────────
 info "Starting services"
 systemctl start "${WEB_SVC}"
 systemctl start "${WORKER_SVC}"
 echo "  Both services started."
 
-# ── 10. Health check ──────────────────────────────────────────────────────────
+# ── 11. Health check ──────────────────────────────────────────────────────────
 info "Health check"
 echo "  Waiting for services to initialise..."
 sleep 5
