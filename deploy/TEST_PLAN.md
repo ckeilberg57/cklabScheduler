@@ -87,6 +87,7 @@ Work through each prompt. Refer to the table below for expected inputs:
 | Pexip Management API password | *(enter password; not echoed)* |
 | Verify TLS | `true` |
 | Conference host PIN | *(press Enter for no PIN)* |
+| Application display name | *(press Enter for default `CKlabs Scheduler`, or type a custom name)* |
 | Scheduler display name | `Scheduler` *(or press Enter for default)* |
 | Dial protocol | `auto` *(or press Enter)* |
 | WebRTC base URL | *(press Enter to construct from COMMAND_HOST)* |
@@ -218,7 +219,7 @@ curl -sk "https://<SERVER>/cklabScheduler/api/endpoints" | python3 -m json.tool 
 **Expected:**
 - HTTP 200
 - `"ok": true`
-- `"endpoints"` array contains Pexip-registered endpoints from `<PEXIP_MGR>`
+- `"items"` array contains only currently-registered Pexip endpoints from `<PEXIP_MGR>`
 
 If the response is `{"ok": false, "error": "..."}`, the Management API credentials
 or `REG_STATUS_HOST` are incorrect. Check `/etc/cklabScheduler/cklabScheduler.env`
@@ -226,7 +227,65 @@ and restart the web service after correcting.
 
 **Pass criterion:** At least one endpoint appears in the list.
 
-### 3.3.5 Config endpoint
+**Stale-endpoint regression check (r4 fix):** The Pexip status API on newer firmware
+returns ALL configured registration aliases, including devices that are configured but
+not currently connected (`is_registered: false`). The scheduler must filter those out.
+
+```bash
+# Count items returned
+curl -sk "https://<SERVER>/cklabScheduler/api/endpoints" \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); \
+      print('ok:', d['ok']); print('item count:', len(d['items'])); \
+      [print(' -', e['alias'], '| registered:', e.get('is_registered')) for e in d['items']]"
+```
+
+**Expected:** Only endpoints currently connected to Pexip appear. Any device that is
+configured in Pexip but powered off or disconnected must **not** appear. Verify against
+the Pexip Management Node under `Configuration → Registration Alias Status`.
+
+**Zero-endpoint state check:** If no endpoints are currently registered, the response
+must be `{"ok": true, "items": []}` — not demo data or a fallback list. The UI should
+show `No registered endpoints were returned from Pexip.`
+
+### 3.3.5 Application display name in UI
+
+Navigate to `https://<SERVER>/cklabScheduler/` in a browser.
+
+**Expected (default name):**
+- Browser tab title reads `CKlabs Scheduler`
+- Sidebar `<h1>` heading reads `CKlabs Scheduler`
+
+To test a custom name, set `APP_DISPLAY_NAME` in the env file and restart the web service:
+
+```bash
+# On server
+sed -i 's/^APP_DISPLAY_NAME=.*/APP_DISPLAY_NAME="Acme Telehealth"/' \
+    /etc/cklabScheduler/cklabScheduler.env
+systemctl restart cklab-scheduler-web
+sleep 3
+curl -sk "https://<SERVER>/cklabScheduler/" | grep -E '<title>|<h1>'
+```
+
+**Expected after custom name:**
+```html
+<title>Acme Telehealth</title>
+...
+<h1>Acme Telehealth</h1>
+```
+
+Restore the original value before continuing:
+```bash
+sed -i 's/^APP_DISPLAY_NAME=.*/APP_DISPLAY_NAME="CKlabs Scheduler"/' \
+    /etc/cklabScheduler/cklabScheduler.env
+systemctl restart cklab-scheduler-web
+```
+
+**Pass criteria:**
+- `<title>` and `<h1>` both reflect the configured `APP_DISPLAY_NAME`
+- `CONTROL_DISPLAY_NAME` (Pexip participant name) is not visible in the page title or heading
+- Changing `APP_DISPLAY_NAME` takes effect after service restart without code changes
+
+### 3.3.6 Config endpoint
 
 ```bash
 curl -sk "https://<SERVER>/cklabScheduler/api/config" | python3 -m json.tool
@@ -592,6 +651,8 @@ bash deploy/upgrade.sh
   ProxyPass lines updated. Validating new configuration...
   Syntax OK
   Apache configuration validated and reloaded.
+══ Updating environment configuration ══
+  APP_DISPLAY_NAME not found — added default: CKlabs Scheduler
 ══ Starting services ══
   Both services started.
 ══ Health check ══
@@ -637,7 +698,50 @@ curl -sk "https://<SERVER>/cklabScheduler/api/health" \
 - Both services are `active`
 - Health check returns `ok: True`
 
-### 3.6.5 Verify database backup was created
+### 3.6.5 Verify APP_DISPLAY_NAME environment migration
+
+After upgrading from r3 (which had no `APP_DISPLAY_NAME`), the key must have been
+added with the default value without disturbing any other setting.
+
+```bash
+# Must be present with the default value
+grep '^APP_DISPLAY_NAME=' /etc/cklabScheduler/cklabScheduler.env
+
+# SECRET_KEY must be unchanged (env migration must not overwrite existing keys)
+grep '^SECRET_KEY=' /etc/cklabScheduler/cklabScheduler.env | cut -c1-20
+```
+
+**Expected:**
+```
+APP_DISPLAY_NAME="CKlabs Scheduler"
+```
+
+To verify that a pre-existing custom value is preserved (repeat-upgrade idempotency):
+
+```bash
+# Simulate admin having set a custom name before upgrade
+sed -i 's/^APP_DISPLAY_NAME=.*/APP_DISPLAY_NAME="Acme Telehealth"/' \
+    /etc/cklabScheduler/cklabScheduler.env
+
+# Run upgrade again
+bash deploy/upgrade.sh
+
+# Confirm the custom name survived
+grep '^APP_DISPLAY_NAME=' /etc/cklabScheduler/cklabScheduler.env
+```
+
+**Expected output from upgrade:**
+```
+══ Updating environment configuration ══
+  APP_DISPLAY_NAME already set — preserving existing value.
+```
+
+**Expected value after:** `APP_DISPLAY_NAME="Acme Telehealth"` (not overwritten)
+
+**Pass criterion:** upgrade.sh adds default when absent, but never overwrites
+an admin-set value.
+
+### 3.6.6 Verify database backup was created
 
 ```bash
 ls -lh /var/lib/cklabScheduler/scheduler.db.bak.*
@@ -645,7 +749,7 @@ ls -lh /var/lib/cklabScheduler/scheduler.db.bak.*
 
 **Expected:** One `.bak.<TIMESTAMP>` file created just before the upgrade.
 
-### 3.6.6 Verify Apache ProxyPass migration (r2 → r3)
+### 3.6.7 Verify Apache ProxyPass migration (r2 → r3)
 
 Confirm the Apache config was surgically updated:
 
@@ -688,7 +792,7 @@ sudo bash /root/cklabScheduler-v2/deploy/verify_install.sh <SERVER>
 - Direct Gunicorn curl returns `"ok": true`
 - `verify_install.sh` exits 0
 
-### 3.6.7 Apache rollback on configtest failure (optional destructive test)
+### 3.6.8 Apache rollback on configtest failure (optional destructive test)
 
 To verify the automatic rollback path, temporarily corrupt the Apache config after
 backing it up, trigger `upgrade.sh`, and observe the restore:
@@ -819,8 +923,13 @@ Mark each item ✓ PASS, ✗ FAIL, or N/A before signing off on Phase 3.
 - [ ] 3.3.2 — Bare `/cklabScheduler` redirects 301 → `/cklabScheduler/`
 - [ ] 3.3.3 — `/api/health` returns `ok: true`, `scheduler_worker.ok: true`
 - [ ] 3.3.3 — Health response exposes no hostnames or credentials
-- [ ] 3.3.4 — `/api/endpoints` returns at least one Pexip endpoint
-- [ ] 3.3.5 — `/api/config` returns expected pattern and non-empty `command_host`
+- [ ] 3.3.4 — `/api/endpoints` returns only currently-registered Pexip endpoints
+- [ ] 3.3.4 — `/api/endpoints` returns `{"ok": true, "items": []}` when no endpoints registered (no fallback/demo data)
+- [ ] 3.3.4 — No offline/unconfigured devices appear in the endpoint list
+- [ ] 3.3.5 — Browser `<title>` matches `APP_DISPLAY_NAME`
+- [ ] 3.3.5 — Sidebar `<h1>` matches `APP_DISPLAY_NAME`
+- [ ] 3.3.5 — Custom `APP_DISPLAY_NAME` takes effect after service restart
+- [ ] 3.3.6 — `/api/config` returns expected pattern and non-empty `command_host`
 
 ### Meeting Lifecycle
 
@@ -844,16 +953,19 @@ Mark each item ✓ PASS, ✗ FAIL, or N/A before signing off on Phase 3.
 
 - [ ] 3.6.3 — `upgrade.sh` completed without errors
 - [ ] 3.6.3 — Apache migration step printed "validated and reloaded" (r2 → r3)
-- [ ] 3.6.4 — `cklabScheduler.env` modification time unchanged
+- [ ] 3.6.3 — "Updating environment configuration" step printed `APP_DISPLAY_NAME not found — added default`
+- [ ] 3.6.4 — `cklabScheduler.env` modification time unchanged (env vars only appended, not overwritten)
 - [ ] 3.6.4 — `SECRET_KEY` unchanged (env file was not overwritten)
 - [ ] 3.6.4 — Code change present in `/opt/cklabScheduler/worker.py`
 - [ ] 3.6.4 — Both services active post-upgrade
 - [ ] 3.6.4 — Health check `ok: True` post-upgrade
-- [ ] 3.6.5 — Database backup file created
-- [ ] 3.6.6 — Apache ProxyPass shows `http://127.0.0.1:5080/cklabScheduler/` (r3 format)
-- [ ] 3.6.6 — Apache config backup created under `sites-available/`
-- [ ] 3.6.6 — Direct `curl http://127.0.0.1:5080/cklabScheduler/api/health` returns `ok: true`
-- [ ] 3.6.6 — `verify_install.sh` passes ProxyPass check post-upgrade
+- [ ] 3.6.5 — `APP_DISPLAY_NAME="CKlabs Scheduler"` present in env file after upgrade
+- [ ] 3.6.5 — Repeat upgrade with custom `APP_DISPLAY_NAME` set: value preserved, "already set" printed
+- [ ] 3.6.6 — Database backup file created
+- [ ] 3.6.7 — Apache ProxyPass shows `http://127.0.0.1:5080/cklabScheduler/` (r3 format)
+- [ ] 3.6.7 — Apache config backup created under `sites-available/`
+- [ ] 3.6.7 — Direct `curl http://127.0.0.1:5080/cklabScheduler/api/health` returns `ok: true`
+- [ ] 3.6.7 — `verify_install.sh` passes ProxyPass check post-upgrade
 
 ### Uninstall
 

@@ -62,7 +62,12 @@ class PexipAPI:
             if is_registered is None:
                 is_registered = item.get("registered")
             if is_registered is None:
+                # Older Pexip firmware: the status endpoint only emits currently-
+                # registered aliases, so no is_registered field means registered.
                 is_registered = True
+
+            if not is_registered:
+                continue
 
             results.append({
                 "alias": alias,

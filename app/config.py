@@ -25,6 +25,8 @@ class Settings:
     CONTROL_DISPLAY_NAME = os.getenv("CONTROL_DISPLAY_NAME", "Scheduler")
     DIAL_PROTOCOL = os.getenv("DIAL_PROTOCOL", "auto")
 
+    APP_DISPLAY_NAME = os.getenv("APP_DISPLAY_NAME", "CKlabs Scheduler")
+
     ABOUT_TO_START_MINUTES = int(os.getenv("ABOUT_TO_START_MINUTES", "1"))
     DEFAULT_EXTEND_MINUTES = int(os.getenv("DEFAULT_EXTEND_MINUTES", "15"))
     POLL_SECONDS = int(os.getenv("POLL_SECONDS", "3"))

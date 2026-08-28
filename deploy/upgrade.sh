@@ -147,13 +147,28 @@ else
     echo "  Then reload: apache2ctl configtest && systemctl reload apache2"
 fi
 
-# ── 10. Start both services ───────────────────────────────────────────────────
+# ── 10. Migrate environment configuration ────────────────────────────────────
+info "Updating environment configuration"
+# Add new configuration keys with safe defaults when not already present.
+# Never overwrite a value that was set by the administrator.
+_add_env_default() {
+    local key="$1" default="$2"
+    if grep -q "^${key}=" "${ENV_FILE}" 2>/dev/null; then
+        echo "  ${key} already set — preserving existing value."
+    else
+        printf '%s="%s"\n' "${key}" "${default}" >> "${ENV_FILE}"
+        echo "  ${key} not found — added default: ${default}"
+    fi
+}
+_add_env_default "APP_DISPLAY_NAME" "CKlabs Scheduler"
+
+# ── 11. Start both services ───────────────────────────────────────────────────
 info "Starting services"
 systemctl start "${WEB_SVC}"
 systemctl start "${WORKER_SVC}"
 echo "  Both services started."
 
-# ── 11. Health check ──────────────────────────────────────────────────────────
+# ── 12. Health check ──────────────────────────────────────────────────────────
 info "Health check"
 echo "  Waiting for services to initialise..."
 sleep 5

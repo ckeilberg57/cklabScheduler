@@ -140,7 +140,7 @@ if [[ -f "${ENV_FILE}" ]]; then
         fail "${ENV_FILE} owner: got ${ENV_OWNER}, expected root:${SVC_USER}"
     fi
     # Verify required keys are present (values are not inspected or printed)
-    for key in REG_STATUS_HOST COMMAND_HOST MGMT_USER MGMT_PASS SECRET_KEY DB_PATH; do
+    for key in REG_STATUS_HOST COMMAND_HOST MGMT_USER MGMT_PASS SECRET_KEY DB_PATH APP_DISPLAY_NAME; do
         if grep -q "^${key}=" "${ENV_FILE}" 2>/dev/null; then
             ok "  Key present: ${key}"
         else

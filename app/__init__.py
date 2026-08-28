@@ -23,6 +23,10 @@ def create_app():
     app.config["SECRET_KEY"] = Settings.SECRET_KEY
     app.pexip = PexipAPI()
 
+    @app.context_processor
+    def _inject_globals():
+        return {"app_display_name": Settings.APP_DISPLAY_NAME}
+
     init_db()
 
     from app.routes.ui import ui_bp
