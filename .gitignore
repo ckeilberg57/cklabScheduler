@@ -1,12 +1,72 @@
+# ── Environment / secrets ─────────────────────────────────────────────────────
 .env
 .env.*
 !.env.example
 
+# ── Databases ─────────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Virtual environments ──────────────────────────────────────────────────────
 venv/
 .venv/
+
+# ── Python bytecode / caches ──────────────────────────────────────────────────
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.eggs/
 
+# ── Test / coverage output ────────────────────────────────────────────────────
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+junit*.xml
+
+# ── Certificates / private keys ───────────────────────────────────────────────
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+*.der
+
+# ── Release archives ──────────────────────────────────────────────────────────
+*.tar.gz
+*.tar.bz2
+*.zip
+*.tgz
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
 .DS_Store
+.AppleDouble
+.LSOverride
 
-*.db
+# ── Editors ───────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Internal planning artifacts ───────────────────────────────────────────────
+REBUILD_PLAN.md
+
+# ── Claude Code internal ──────────────────────────────────────────────────────
+.claude/

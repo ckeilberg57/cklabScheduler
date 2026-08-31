@@ -6,8 +6,8 @@ Root cause fixed (r4):
   the Pexip status API but never filtering on it.  Newer Pexip firmware
   returns ALL configured registration aliases with their current is_registered
   status (True = connected, False = offline/unconfigured).  The result was
-  that aliases like cklabsx20@ck-collab-engtest.com — registered in Pexip's
-  configuration but not currently connected — appeared in the scheduler UI.
+  that aliases configured in Pexip but not currently connected — such as a
+  device that is powered off — appeared in the scheduler UI.
 
   Fix: skip any alias where is_registered is explicitly False.
   Backward compat: if the field is absent entirely (older firmware that only
@@ -97,7 +97,7 @@ class TestListRegisteredEndpoints:
         pexip = _make_pexip()
         items = [
             {"alias": "online@example.com",              "is_registered": True},
-            {"alias": "cklabsx20@ck-collab-engtest.com", "is_registered": False},
+            {"alias": "stale-device@example.com", "is_registered": False},
         ]
         with patch.object(pexip, "_status_request", return_value=_pexip_page(items)):
             result = pexip.list_registered_endpoints()
@@ -120,13 +120,13 @@ class TestListRegisteredEndpoints:
         assert aliases == {"live-a@example.com", "live-c@example.com"}
 
     def test_stale_alias_cannot_appear_when_unregistered(self):
-        """The specific stale alias reported in testing cannot appear when is_registered=False."""
+        """An alias with is_registered=False must not appear in results."""
         pexip = _make_pexip()
-        items = [{"alias": "cklabsx20@ck-collab-engtest.com", "is_registered": False}]
+        items = [{"alias": "stale-device@example.com", "is_registered": False}]
         with patch.object(pexip, "_status_request", return_value=_pexip_page(items)):
             result = pexip.list_registered_endpoints()
         assert result == []
-        assert all(ep["alias"] != "cklabsx20@ck-collab-engtest.com" for ep in result)
+        assert all(ep["alias"] != "stale-device@example.com" for ep in result)
 
     def test_missing_is_registered_field_includes_endpoint(self):
         """Older Pexip firmware omits is_registered; treat absence as registered=True."""
@@ -212,8 +212,8 @@ class TestEndpointsApiRoute:
         assert data["items"] == []
 
     def test_stale_alias_absent_from_api_response(self, test_db):
-        """The stale alias cklabsx20@ck-collab-engtest.com cannot appear unless
-        it is explicitly present in the mocked Pexip registration response."""
+        """A stale alias cannot appear in the API response unless Pexip
+        explicitly reports it as registered in the mocked response."""
         app, mock_pexip = make_app(test_db)
         mock_pexip.list_registered_endpoints.return_value = [
             {"alias": "real@example.com", "display_name": "Real endpoint",
@@ -223,17 +223,17 @@ class TestEndpointsApiRoute:
             resp = client.get("/api/endpoints")
         data = resp.get_json()
         aliases = [ep["alias"] for ep in data["items"]]
-        assert "cklabsx20@ck-collab-engtest.com" not in aliases
+        assert "stale-device@example.com" not in aliases
 
     def test_stale_alias_appears_only_when_explicitly_mocked(self, test_db):
         """If Pexip explicitly returns the stale alias as registered, it must appear."""
         app, mock_pexip = make_app(test_db)
         mock_pexip.list_registered_endpoints.return_value = [
-            {"alias": "cklabsx20@ck-collab-engtest.com", "display_name": "Test device",
+            {"alias": "stale-device@example.com", "display_name": "Test device",
              "is_registered": True, "protocol": "", "node": ""},
         ]
         with app.test_client() as client:
             resp = client.get("/api/endpoints")
         data = resp.get_json()
         aliases = [ep["alias"] for ep in data["items"]]
-        assert "cklabsx20@ck-collab-engtest.com" in aliases
+        assert "stale-device@example.com" in aliases
