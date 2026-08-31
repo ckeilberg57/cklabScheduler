@@ -16,6 +16,8 @@ A production-grade Pexip meeting scheduler built on Flask and APScheduler. It le
 
 ---
 
+<img width="1470" height="828" alt="image" src="https://github.com/user-attachments/assets/10e77904-6d37-4d42-bd03-9ca56864f19a" />
+
 ## Architecture
 
 ### Web request path
