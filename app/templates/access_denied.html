@@ -8,48 +8,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
-  <style>
-    body {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-    }
-    .denied-box {
-      max-width: 480px;
-      width: 100%;
-      padding: 40px 36px;
-      text-align: center;
-    }
-    .denied-box h2 { font-size: 1.4rem; margin: 0 0 12px; }
-    .denied-box p { color: var(--muted); margin: 0 0 24px; font-size: 0.95rem; }
-    .denied-reason {
-      background: #fff8e1;
-      border: 1px solid #ffe082;
-      border-radius: 10px;
-      padding: 10px 14px;
-      font-size: 0.88rem;
-      color: #5d4037;
-      margin-bottom: 24px;
-      text-align: left;
-    }
-    .home-link {
-      display: inline-block;
-      padding: 10px 24px;
-      background: var(--blue);
-      color: #fff;
-      border-radius: 10px;
-      text-decoration: none;
-      font-weight: 600;
-      font-size: 0.9rem;
-      transition: background 0.15s, transform 0.15s;
-    }
-    .home-link:hover { background: #3a68c0; transform: translateY(-1px); }
-  </style>
 </head>
-<body>
+<body class="denied-page">
   <div class="denied-box glass">
-    <div class="brand-mark" style="margin: 0 auto 20px;">C</div>
+    <div class="brand-mark">C</div>
     <h2>Access Denied</h2>
     <p>You do not have permission to access this page.</p>
 

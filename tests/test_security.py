@@ -212,6 +212,20 @@ class TestSecurityHeaders:
         csp = resp.headers.get("Content-Security-Policy", "")
         assert "frame-ancestors 'none'" in csp
 
+    def test_csp_base_uri_self_on_html(self, test_db):
+        app = make_app(test_db)
+        with app.test_client() as client:
+            resp = client.get("/login")
+        csp = resp.headers.get("Content-Security-Policy", "")
+        assert "base-uri 'self'" in csp
+
+    def test_csp_form_action_self_on_html(self, test_db):
+        app = make_app(test_db)
+        with app.test_client() as client:
+            resp = client.get("/login")
+        csp = resp.headers.get("Content-Security-Policy", "")
+        assert "form-action 'self'" in csp
+
     def test_cache_control_no_store_on_html(self, test_db):
         app = make_app(test_db)
         with app.test_client() as client:

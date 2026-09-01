@@ -75,6 +75,8 @@ def create_app():
                 "font-src 'self' https://fonts.gstatic.com; "
                 "img-src 'self'; "
                 "connect-src 'self'; "
+                "base-uri 'self'; "
+                "form-action 'self'; "
                 "frame-ancestors 'none'"
             )
             response.headers.setdefault(
