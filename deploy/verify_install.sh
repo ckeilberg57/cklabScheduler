@@ -231,7 +231,7 @@ fi
 
 chk "gunicorn binary in venv" test -f "${VENV}/bin/gunicorn"
 
-for pkg in Flask gunicorn APScheduler requests python-dotenv Flask-Login Flask-WTF msal; do
+for pkg in Flask gunicorn APScheduler requests python-dotenv cryptography Flask-Login Flask-WTF msal; do
     if "${VENV}/bin/pip" show "${pkg}" &>/dev/null; then
         VER="$("${VENV}/bin/pip" show "${pkg}" 2>/dev/null | grep '^Version:' | awk '{print $2}')"
         ok "pip: ${pkg} ${VER}"
