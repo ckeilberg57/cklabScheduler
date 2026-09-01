@@ -3,7 +3,7 @@ requests==2.33.0
 APScheduler==3.10.4
 python-dotenv==1.2.2
 gunicorn==23.0.0
-cryptography==48.0.1         # Transitive dep of msal; pinned explicitly for security
+cryptography==50.0.1         # Transitive dep of msal; pinned explicitly for security
 # Authentication
 Flask-Login==0.6.3          # Session management and @login_required
 Flask-WTF==1.2.2            # CSRF protection for forms and JSON APIs
