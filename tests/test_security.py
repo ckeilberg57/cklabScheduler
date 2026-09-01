@@ -124,6 +124,54 @@ class TestOpenRedirectHelper:
         location = resp.headers.get("Location", "")
         assert "evil.example.com" not in location
 
+    def test_percent_encoded_scheme_relative_rejected(self, test_db):
+        """%2F%2Fevil.example must not pass the open redirect check."""
+        assert self._call(make_app(test_db), "%2F%2Fevil.example") is None
+
+    def test_percent_encoded_backslash_rejected(self, test_db):
+        """%5C%5Cevil.example must not pass the open redirect check."""
+        assert self._call(make_app(test_db), "%5C%5Cevil.example") is None
+
+    def test_slash_backslash_rejected(self, test_db):
+        """/\\evil.example must not pass the open redirect check."""
+        assert self._call(make_app(test_db), "/\\evil.example") is None
+
+    def test_valid_next_stored_in_session_and_used_after_login(self, test_db):
+        """GET /login?next=/dashboard stores it; POST redirects there."""
+        from app.auth.local import hash_password
+        from app.auth.models import create_local_user
+        app = make_app(test_db)
+        with patch.object(Settings, "DB_PATH", test_db):
+            create_local_user("redir3", hash_password("TestPassword123!"), role="scheduler_user")
+        with app.test_client() as client:
+            with patch.object(Settings, "DB_PATH", test_db):
+                client.get("/login?next=/dashboard")
+                resp = client.post(
+                    "/login",
+                    data={"username": "redir3", "password": "TestPassword123!"},
+                    follow_redirects=False,
+                )
+        location = resp.headers.get("Location", "")
+        assert "/dashboard" in location
+
+    def test_invalid_next_not_stored_falls_back_to_index(self, test_db):
+        """GET /login?next=//evil stores nothing; POST redirects to index."""
+        from app.auth.local import hash_password
+        from app.auth.models import create_local_user
+        app = make_app(test_db)
+        with patch.object(Settings, "DB_PATH", test_db):
+            create_local_user("redir4", hash_password("TestPassword123!"), role="scheduler_user")
+        with app.test_client() as client:
+            with patch.object(Settings, "DB_PATH", test_db):
+                client.get("/login?next=//evil.example.com")
+                resp = client.post(
+                    "/login",
+                    data={"username": "redir4", "password": "TestPassword123!"},
+                    follow_redirects=False,
+                )
+        location = resp.headers.get("Location", "")
+        assert "evil.example.com" not in location
+
 
 # ── CSRF protection ───────────────────────────────────────────────────────────
 

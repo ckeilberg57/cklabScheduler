@@ -28,9 +28,8 @@
       {% endif %}
 
       {% if local_auth_enabled %}
-      <form method="post" action="{{ url_for('auth.login') }}{% if next %}?next={{ next | urlencode }}{% endif %}">
+      <form method="post" action="{{ url_for('auth.login') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-        <input type="hidden" name="next" value="{{ next }}" />
 
         <label>
           Username

@@ -1,5 +1,5 @@
 import logging
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse, urljoin, unquote
 
 from flask import (
     Blueprint,
@@ -21,15 +21,34 @@ auth_bp = Blueprint("auth", __name__)
 
 
 def _safe_redirect_url(target):
-    """Return target if it is a same-origin URL, else None."""
+    """Return a validated same-origin path, or None.
+
+    The return value is a canonical path extracted from the parsed URL —
+    never the raw user-supplied string — so redirect() receives a
+    server-constructed value rather than untrusted input verbatim.
+
+    Rejected forms include:
+      //evil.example (scheme-relative)
+      \\evil.example / /\\evil.example (backslash variants)
+      %2F%2Fevil.example (percent-encoded scheme-relative)
+      %5C%5Cevil.example (percent-encoded backslash)
+      javascript:, data:, vbscript: (dangerous schemes)
+      https://evil.example (external domain)
+    """
     if not target:
         return None
-    if target.startswith("//"):
+    try:
+        decoded = unquote(str(target).strip())
+    except Exception:
+        return None
+    if decoded.startswith("//") or decoded.startswith("\\"):
+        return None
+    if "\\" in decoded:
         return None
     ref = urlparse(request.host_url)
-    test = urlparse(urljoin(request.host_url, target))
+    test = urlparse(urljoin(request.host_url, decoded))
     if test.scheme in ("http", "https") and test.netloc == ref.netloc:
-        return target
+        return test.path + ("?" + test.query if test.query else "")
     return None
 
 
@@ -42,6 +61,15 @@ def login():
 
     error = None
     prefill_username = ""
+
+    if request.method == "GET":
+        # Validate the next parameter now and store it server-side so that
+        # redirect() never receives a raw user-supplied string.
+        next_param = request.args.get("next", "")
+        if next_param:
+            safe_next = _safe_redirect_url(next_param)
+            if safe_next:
+                session["_login_next"] = safe_next
 
     if request.method == "POST":
         if not Settings.LOCAL_AUTH_ENABLED:
@@ -61,6 +89,8 @@ def login():
 
             if row and row["enabled"] and verify_password(row["password_hash"], password):
                 user = get_user_by_id(row["id"])
+                # Pop the validated destination BEFORE session.clear() wipes it.
+                pending_next = session.pop("_login_next", None)
                 session.clear()  # prevent session fixation
                 login_user(user, remember=False)
                 session.permanent = True
@@ -73,8 +103,7 @@ def login():
                     ip_address=ip,
                     success=True,
                 )
-                next_url = _safe_redirect_url(request.form.get("next") or request.args.get("next"))
-                return redirect(next_url or url_for("ui.index"))
+                return redirect(pending_next or url_for("ui.index"))
             else:
                 log_auth_event(
                     "login_failure",
@@ -89,12 +118,10 @@ def login():
                 error = "Invalid username or password."
                 logger.warning("Local login failed for username=%r ip=%s", username, ip)
 
-    next_arg = request.args.get("next", "")
     return render_template(
         "login.html",
         error=error,
         prefill_username=prefill_username,
-        next=next_arg,
     )
 
 

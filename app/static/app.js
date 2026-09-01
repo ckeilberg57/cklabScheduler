@@ -33,10 +33,17 @@ function randomAlias() {
   return out;
 }
 
+function safeErrorMessage(error) {
+  if (error instanceof Error) {
+    return error.message || 'An unexpected error occurred.';
+  }
+  return String(error || 'An unexpected error occurred.');
+}
+
 function showToast(message) {
   const el = document.createElement('div');
   el.className = 'toast';
-  el.textContent = message;
+  el.textContent = String(message ?? '');
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2800);
 }
@@ -141,19 +148,36 @@ function injectInviteeSection() {
   const section = document.createElement('div');
   section.id = 'inviteeSection';
   section.className = 'invitee-section';
-  section.innerHTML = `
-    <div class="section-head slim">
-      <h3>WebRTC email participants</h3>
-    </div>
-    <label>
-      Participant email
-      <div class="inline-input">
-        <input type="email" id="inviteeEmail" placeholder="participant@example.com" />
-        <button type="button" id="addInvitee" class="secondary">Add</button>
-      </div>
-    </label>
-    <div id="inviteeList" class="invitee-list"></div>
-  `;
+
+  const head = document.createElement('div');
+  head.className = 'section-head slim';
+  const headH3 = document.createElement('h3');
+  headH3.textContent = 'WebRTC email participants';
+  head.appendChild(headH3);
+  section.appendChild(head);
+
+  const emailLabel = document.createElement('label');
+  emailLabel.textContent = 'Participant email';
+  const inlineDiv = document.createElement('div');
+  inlineDiv.className = 'inline-input';
+  const emailInput = document.createElement('input');
+  emailInput.type = 'email';
+  emailInput.id = 'inviteeEmail';
+  emailInput.placeholder = 'participant@example.com';
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.id = 'addInvitee';
+  addBtn.className = 'secondary';
+  addBtn.textContent = 'Add';
+  inlineDiv.appendChild(emailInput);
+  inlineDiv.appendChild(addBtn);
+  emailLabel.appendChild(inlineDiv);
+  section.appendChild(emailLabel);
+
+  const listDiv = document.createElement('div');
+  listDiv.id = 'inviteeList';
+  listDiv.className = 'invitee-list';
+  section.appendChild(listDiv);
 
   endpointList.insertAdjacentElement('afterend', section);
 
@@ -224,21 +248,45 @@ function renderInvitees() {
   });
 }
 
-function renderInviteeChips(invitees, meetingId) {
+function buildInviteeChips(container, invitees, meetingId) {
+  container.replaceChildren();
   if (!invitees || !invitees.length) {
-    return '<span class="muted">No WebRTC email participants</span>';
+    const muted = document.createElement('span');
+    muted.className = 'muted';
+    muted.textContent = 'No WebRTC email participants';
+    container.appendChild(muted);
+    return;
   }
+  invitees.forEach((inv) => {
+    const row = document.createElement('div');
+    row.className = 'chip-row';
 
-  return invitees.map((inv) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = `${inv.email} • ${inv.email_status || 'pending'}`;
+    row.appendChild(chip);
+
+    const resendBtn = document.createElement('button');
+    resendBtn.type = 'button';
+    resendBtn.className = 'tiny-btn resend-invite-btn';
+    resendBtn.dataset.meetingId = meetingId;
+    resendBtn.dataset.inviteeId = inv.id;
+    resendBtn.textContent = 'Resend invite';
+    row.appendChild(resendBtn);
+
     const joinHref = safeHref(inv.join_url);
-    return `
-    <div class="chip-row">
-      <span class="chip">${escapeHtml(inv.email)} • ${escapeHtml(inv.email_status || 'pending')}</span>
-      <button type="button" class="tiny-btn resend-invite-btn" data-meeting-id="${meetingId}" data-invitee-id="${inv.id}">Resend invite</button>
-      ${joinHref ? `<a class="tiny-btn" href="${escapeHtml(joinHref)}" target="_blank" rel="noopener noreferrer">Open URL</a>` : ''}
-    </div>
-  `;
-  }).join('');
+    if (joinHref) {
+      const link = document.createElement('a');
+      link.className = 'tiny-btn';
+      link.href = joinHref;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Open URL';
+      row.appendChild(link);
+    }
+
+    container.appendChild(row);
+  });
 }
 
 async function resendInvite(meetingId, inviteeId) {
@@ -247,7 +295,7 @@ async function resendInvite(meetingId, inviteeId) {
     showToast('Invite resent.');
     await loadMeetings();
   } catch (err) {
-    showToast(err.message);
+    showToast(safeErrorMessage(err));
   }
 }
 
@@ -260,7 +308,10 @@ async function loadEndpoints() {
   const list = $('#endpointList');
 
   if (!state.endpoints.length) {
-    list.innerHTML = '<div class="empty">Loading registered endpoints...</div>';
+    const loading = document.createElement('div');
+    loading.className = 'empty';
+    loading.textContent = 'Loading registered endpoints...';
+    list.replaceChildren(loading);
   }
 
   const data = await api('/endpoints');
@@ -306,10 +357,13 @@ function renderEndpoints() {
 
   rememberEndpointSelections();
 
-  list.innerHTML = '';
+  list.replaceChildren();
 
   if (!state.endpoints.length) {
-    list.innerHTML = '<div class="empty">No registered endpoints were returned from Pexip.</div>';
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = 'No registered endpoints were returned from Pexip.';
+    list.appendChild(empty);
     return;
   }
 
@@ -425,13 +479,36 @@ function setAdjustmentMinutes(meetingId, minutes) {
 function adjustmentControl(meetingId) {
   const value = getAdjustmentMinutes(meetingId);
   const label = value > 0 ? `+${value} min` : `${value} min`;
-  return `
-    <div class="adjust-control">
-      <label>Adjust end time <strong data-adjust-label="${meetingId}">${label}</strong></label>
-      <input type="range" min="-120" max="180" step="15" value="${value}" data-action="adjust-range" data-meeting-id="${meetingId}" />
-      <button type="button" data-action="adjust-apply" data-meeting-id="${meetingId}">Apply</button>
-    </div>
-  `;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'adjust-control';
+
+  const lbl = document.createElement('label');
+  lbl.appendChild(document.createTextNode('Adjust end time '));
+  const strong = document.createElement('strong');
+  strong.dataset.adjustLabel = meetingId;
+  strong.textContent = label;
+  lbl.appendChild(strong);
+
+  const range = document.createElement('input');
+  range.type = 'range';
+  range.min = '-120';
+  range.max = '180';
+  range.step = '15';
+  range.value = String(value);
+  range.dataset.action = 'adjust-range';
+  range.dataset.meetingId = meetingId;
+
+  const applyBtn = document.createElement('button');
+  applyBtn.type = 'button';
+  applyBtn.dataset.action = 'adjust-apply';
+  applyBtn.dataset.meetingId = meetingId;
+  applyBtn.textContent = 'Apply';
+
+  wrap.appendChild(lbl);
+  wrap.appendChild(range);
+  wrap.appendChild(applyBtn);
+  return wrap;
 }
 
 function renderTimeline() {
@@ -440,8 +517,8 @@ function renderTimeline() {
   const dayPicker = $('#dayPicker');
   const headerDate = $('#headerDate');
 
-  hours.innerHTML = '';
-  canvas.innerHTML = '';
+  hours.replaceChildren();
+  canvas.replaceChildren();
 
   const selectedDate = new Date(`${dayPicker.value}T00:00:00`);
   headerDate.textContent = fullDateFmt.format(selectedDate);
@@ -507,24 +584,85 @@ function renderTimeline() {
     block.style.left = `${left}%`;
     block.style.width = `${width}%`;
     block.style.top = `${topOffset + rowIndex * rowHeight}px`;
-    block.innerHTML = `
-      <strong>${escapeHtml(m.title)}</strong>
-      <div class="meeting-meta">${fmt.format(m._start)} – ${fmt.format(m._end)} • ${escapeHtml(m.meeting_alias)}</div>
-      <div class="meeting-hover-card">
-        <div><strong>${escapeHtml(m.title)}</strong></div>
-        <div>${fmt.format(m._start)} – ${fmt.format(m._end)}</div>
-        <div>${escapeHtml(m.meeting_alias)}</div>
-        <div><strong>Assigned:</strong> ${(m.endpoints || []).map((ep) => `${escapeHtml(ep.display_name || ep.endpoint_alias)} • ${escapeHtml(statusLabel(ep, m))}`).join(', ') || 'None'}</div>
-        <div><strong>Live participants:</strong> ${escapeHtml(liveNames)}</div>
-        <div>${escapeHtml(m.notes || 'No notes entered.')}</div>
-        <div class="popup-actions">
-          ${(m.timeline_status || m.status) !== 'ended' ? adjustmentControl(m.id) : ''}
-          ${canEditMeeting(m) ? `<button type="button" data-action="edit" data-meeting-id="${m.id}">Edit</button>` : ''}
-          ${(m.timeline_status || m.status) === 'ended' ? `<a class="tiny-btn" href="${API_BASE}/meetings/${m.id}/export" target="_blank" rel="noopener noreferrer">Export details</a>` : ''}
-          <button type="button" data-action="delete" data-meeting-id="${m.id}">Delete</button>
-        </div>
-      </div>
-    `;
+
+    const titleStrong = document.createElement('strong');
+    titleStrong.textContent = m.title;
+    block.appendChild(titleStrong);
+
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'meeting-meta';
+    metaDiv.textContent = `${fmt.format(m._start)} – ${fmt.format(m._end)} • ${m.meeting_alias}`;
+    block.appendChild(metaDiv);
+
+    const hoverCard = document.createElement('div');
+    hoverCard.className = 'meeting-hover-card';
+
+    const hDiv = document.createElement('div');
+    const hStrong = document.createElement('strong');
+    hStrong.textContent = m.title;
+    hDiv.appendChild(hStrong);
+    hoverCard.appendChild(hDiv);
+
+    const timeDiv = document.createElement('div');
+    timeDiv.textContent = `${fmt.format(m._start)} – ${fmt.format(m._end)}`;
+    hoverCard.appendChild(timeDiv);
+
+    const aliasDiv = document.createElement('div');
+    aliasDiv.textContent = m.meeting_alias;
+    hoverCard.appendChild(aliasDiv);
+
+    const assignedDiv = document.createElement('div');
+    const assignedLabel = document.createElement('strong');
+    assignedLabel.textContent = 'Assigned: ';
+    assignedDiv.appendChild(assignedLabel);
+    assignedDiv.appendChild(document.createTextNode(
+      (m.endpoints || []).map((ep) => `${ep.display_name || ep.endpoint_alias} • ${statusLabel(ep, m)}`).join(', ') || 'None'
+    ));
+    hoverCard.appendChild(assignedDiv);
+
+    const liveDiv = document.createElement('div');
+    const liveLabel = document.createElement('strong');
+    liveLabel.textContent = 'Live participants: ';
+    liveDiv.appendChild(liveLabel);
+    liveDiv.appendChild(document.createTextNode(liveNames));
+    hoverCard.appendChild(liveDiv);
+
+    const notesDiv = document.createElement('div');
+    notesDiv.textContent = m.notes || 'No notes entered.';
+    hoverCard.appendChild(notesDiv);
+
+    const popupActions = document.createElement('div');
+    popupActions.className = 'popup-actions';
+    const blockState = m.timeline_status || m.status;
+    if (blockState !== 'ended') {
+      popupActions.appendChild(adjustmentControl(m.id));
+    }
+    if (canEditMeeting(m)) {
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.dataset.action = 'edit';
+      editBtn.dataset.meetingId = m.id;
+      editBtn.textContent = 'Edit';
+      popupActions.appendChild(editBtn);
+    }
+    if (blockState === 'ended') {
+      const exportLink = document.createElement('a');
+      exportLink.className = 'tiny-btn';
+      exportLink.href = `${API_BASE}/meetings/${m.id}/export`;
+      exportLink.target = '_blank';
+      exportLink.rel = 'noopener noreferrer';
+      exportLink.textContent = 'Export details';
+      popupActions.appendChild(exportLink);
+    }
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.dataset.action = 'delete';
+    deleteBtn.dataset.meetingId = m.id;
+    deleteBtn.textContent = 'Delete';
+    popupActions.appendChild(deleteBtn);
+
+    hoverCard.appendChild(popupActions);
+    block.appendChild(hoverCard);
     canvas.appendChild(block);
   });
 
@@ -545,10 +683,13 @@ function renderTimeline() {
 
 function renderCards() {
   const wrap = $('#meetingCards');
-  wrap.innerHTML = '';
+  wrap.replaceChildren();
 
   if (!state.meetings.length) {
-    wrap.innerHTML = '<div class="empty">No meetings scheduled for this day yet.</div>';
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = 'No meetings scheduled for this day yet.';
+    wrap.appendChild(empty);
     return;
   }
 
@@ -560,70 +701,138 @@ function renderCards() {
     const start = new Date(m.start_time);
     const end = new Date(m.end_time);
 
-    card.innerHTML = `
-      <div class="card-top">
-        <div>
-          <h3>${escapeHtml(m.title)}</h3>
-          <p>${fmt.format(start)} – ${fmt.format(end)} • ${escapeHtml(m.meeting_alias)}</p>
-        </div>
-        <span class="pill ${timelineState}">${escapeHtml(String(timelineState).replaceAll('_', ' '))}</span>
-      </div>
-      <div class="muted">${escapeHtml(m.notes || 'No notes entered.')}</div>
+    // Card top: title, time, status pill
+    const cardTop = document.createElement('div');
+    cardTop.className = 'card-top';
+    const topLeft = document.createElement('div');
+    const h3 = document.createElement('h3');
+    h3.textContent = m.title;
+    const timeP = document.createElement('p');
+    timeP.textContent = `${fmt.format(start)} – ${fmt.format(end)} • ${m.meeting_alias}`;
+    topLeft.appendChild(h3);
+    topLeft.appendChild(timeP);
+    const pill = document.createElement('span');
+    pill.className = `pill ${timelineState}`;
+    pill.textContent = String(timelineState).replaceAll('_', ' ');
+    cardTop.appendChild(topLeft);
+    cardTop.appendChild(pill);
+    card.appendChild(cardTop);
 
-      <div class="subhead">Assigned endpoints</div>
-      <div class="endpoint-chips">
-        ${(m.endpoints || []).map((ep) => `
-          <div class="chip-row">
-            <span class="chip">${escapeHtml(ep.display_name || ep.endpoint_alias)} • ${escapeHtml(statusLabel(ep, m))}</span>
-            ${!ep.live && timelineState === 'started' ? `<button type="button" class="tiny-btn redial-btn" data-meeting-id="${m.id}" data-endpoint-alias="${escapeHtml(ep.endpoint_alias)}">Dial again</button>` : ''}
-          </div>
-        `).join('')}
-      </div>
+    const notesDiv = document.createElement('div');
+    notesDiv.className = 'muted';
+    notesDiv.textContent = m.notes || 'No notes entered.';
+    card.appendChild(notesDiv);
 
-      <div class="subhead">Live participants</div>
-      <div class="endpoint-chips">
-        ${(m.live_participants || []).length
-          ? (m.live_participants || []).map((p) => {
-              const label = escapeHtml(p.display_name || p.remote_alias || 'Unknown');
-              const ip = (p.remote_ip || '').trim();
-              const ipHtml = ip
-                ? ` <a class="ip-link" href="https://${encodeURI(ip)}" target="_blank" rel="noopener noreferrer">${escapeHtml(ip)}</a>`
-                : '';
-              return `<span class="chip live-chip">${label}${ipHtml}</span>`;
-            }).join('')
-          : '<span class="muted">No live participants</span>'}
-      </div>
-
-      <div class="subhead">WebRTC email participants</div>
-      <div class="endpoint-chips">
-        ${renderInviteeChips(m.invitees || [], m.id)}
-      </div>
-
-      <div class="card-actions">
-        ${timelineState !== 'ended' ? adjustmentControl(m.id) : ''}
-        ${canEditMeeting(m) ? '<button type="button" data-action="edit">Edit</button>' : ''}
-        ${timelineState === 'ended' ? `<a class="tiny-btn" href="${API_BASE}/meetings/${m.id}/export" target="_blank" rel="noopener noreferrer">Export details</a>` : ''}
-        <button type="button" data-action="delete">Delete</button>
-      </div>
-    `;
-
-    card.querySelectorAll('[data-action]').forEach((btn) => {
-      btn.onclick = () => {
-        const action = btn.dataset.action;
-        if (action === 'adjust-range') setAdjustmentMinutes(m.id, btn.value);
-        if (action === 'adjust-apply') adjustMeeting(m.id, getAdjustmentMinutes(m.id));
-        if (action === 'delete') deleteMeeting(m.id);
-        if (action === 'edit') openEdit(m.id);
-      };
+    // Assigned endpoints
+    const assignedHead = document.createElement('div');
+    assignedHead.className = 'subhead';
+    assignedHead.textContent = 'Assigned endpoints';
+    card.appendChild(assignedHead);
+    const assignedChips = document.createElement('div');
+    assignedChips.className = 'endpoint-chips';
+    (m.endpoints || []).forEach((ep) => {
+      const row = document.createElement('div');
+      row.className = 'chip-row';
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = `${ep.display_name || ep.endpoint_alias} • ${statusLabel(ep, m)}`;
+      row.appendChild(chip);
+      if (!ep.live && timelineState === 'started') {
+        const redialBtn = document.createElement('button');
+        redialBtn.type = 'button';
+        redialBtn.className = 'tiny-btn redial-btn';
+        redialBtn.dataset.meetingId = m.id;
+        redialBtn.dataset.endpointAlias = ep.endpoint_alias;
+        redialBtn.textContent = 'Dial again';
+        redialBtn.onclick = (e) => {
+          e.stopPropagation();
+          redialEndpoint(redialBtn.dataset.meetingId, redialBtn.dataset.endpointAlias);
+        };
+        row.appendChild(redialBtn);
+      }
+      assignedChips.appendChild(row);
     });
+    card.appendChild(assignedChips);
 
-    card.querySelectorAll('.redial-btn').forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        redialEndpoint(btn.dataset.meetingId, btn.dataset.endpointAlias);
-      };
+    // Live participants
+    const liveHead = document.createElement('div');
+    liveHead.className = 'subhead';
+    liveHead.textContent = 'Live participants';
+    card.appendChild(liveHead);
+    const liveChips = document.createElement('div');
+    liveChips.className = 'endpoint-chips';
+    const liveParts = m.live_participants || [];
+    if (liveParts.length) {
+      liveParts.forEach((p) => {
+        const chipSpan = document.createElement('span');
+        chipSpan.className = 'chip live-chip';
+        chipSpan.textContent = p.display_name || p.remote_alias || 'Unknown';
+        const ip = (p.remote_ip || '').trim();
+        if (ip) {
+          const ipLink = document.createElement('a');
+          ipLink.className = 'ip-link';
+          ipLink.href = `https://${encodeURI(ip)}`;
+          ipLink.target = '_blank';
+          ipLink.rel = 'noopener noreferrer';
+          ipLink.textContent = ip;
+          chipSpan.appendChild(ipLink);
+        }
+        liveChips.appendChild(chipSpan);
+      });
+    } else {
+      const noLive = document.createElement('span');
+      noLive.className = 'muted';
+      noLive.textContent = 'No live participants';
+      liveChips.appendChild(noLive);
+    }
+    card.appendChild(liveChips);
+
+    // WebRTC invitees
+    const inviteeHead = document.createElement('div');
+    inviteeHead.className = 'subhead';
+    inviteeHead.textContent = 'WebRTC email participants';
+    card.appendChild(inviteeHead);
+    const inviteeChips = document.createElement('div');
+    inviteeChips.className = 'endpoint-chips';
+    buildInviteeChips(inviteeChips, m.invitees || [], m.id);
+    card.appendChild(inviteeChips);
+
+    // Card actions
+    const cardActions = document.createElement('div');
+    cardActions.className = 'card-actions';
+    if (timelineState !== 'ended') {
+      cardActions.appendChild(adjustmentControl(m.id));
+    }
+    if (canEditMeeting(m)) {
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.dataset.action = 'edit';
+      editBtn.textContent = 'Edit';
+      editBtn.onclick = () => openEdit(m.id);
+      cardActions.appendChild(editBtn);
+    }
+    if (timelineState === 'ended') {
+      const exportLink = document.createElement('a');
+      exportLink.className = 'tiny-btn';
+      exportLink.href = `${API_BASE}/meetings/${m.id}/export`;
+      exportLink.target = '_blank';
+      exportLink.rel = 'noopener noreferrer';
+      exportLink.textContent = 'Export details';
+      cardActions.appendChild(exportLink);
+    }
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.dataset.action = 'delete';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.onclick = () => deleteMeeting(m.id);
+    cardActions.appendChild(deleteBtn);
+
+    card.querySelectorAll('[data-action="adjust-range"]').forEach((el) => {
+      el.addEventListener('input', () => setAdjustmentMinutes(m.id, el.value));
     });
-
+    card.querySelectorAll('[data-action="adjust-apply"]').forEach((el) => {
+      el.addEventListener('click', () => adjustMeeting(m.id, getAdjustmentMinutes(m.id)));
+    });
     card.querySelectorAll('.resend-invite-btn').forEach((btn) => {
       btn.onclick = (e) => {
         e.stopPropagation();
@@ -631,6 +840,7 @@ function renderCards() {
       };
     });
 
+    card.appendChild(cardActions);
     wrap.appendChild(card);
   });
 }
@@ -667,7 +877,7 @@ async function createMeeting(e) {
     renderInvitees();
     await loadMeetings();
   } catch (err) {
-    showToast(err.message);
+    showToast(safeErrorMessage(err));
   }
 }
 
@@ -686,7 +896,7 @@ async function adjustMeeting(id, minutes) {
     state.adjustmentMinutesByMeeting[id] = 15;
     await loadMeetings();
   } catch (err) {
-    showToast(err.message);
+    showToast(safeErrorMessage(err));
   }
 }
 
@@ -696,7 +906,7 @@ async function deleteMeeting(id) {
     showToast('Meeting deleted.');
     await loadMeetings();
   } catch (err) {
-    showToast(err.message);
+    showToast(safeErrorMessage(err));
   }
 }
 
@@ -709,7 +919,7 @@ async function redialEndpoint(meetingId, endpointAlias) {
     showToast(`Dial again requested for ${endpointAlias}`);
     await loadMeetings();
   } catch (err) {
-    showToast(err.message);
+    showToast(safeErrorMessage(err));
   }
 }
 
@@ -734,7 +944,7 @@ function openEdit(meetingId) {
   $('#editNotes').value = meeting.notes || '';
 
   const list = $('#editEndpointList');
-  list.innerHTML = '';
+  list.replaceChildren();
   const assigned = new Set((meeting.endpoints || []).map((ep) => ep.endpoint_alias));
   window.currentEditInvitees = (meeting.invitees || []).map((inv) => ({
     email: inv.email,
@@ -744,13 +954,22 @@ function openEdit(meetingId) {
   state.endpoints.forEach((ep) => {
     const row = document.createElement('label');
     row.className = 'endpoint-item light-item';
-    row.innerHTML = `
-      <input type="checkbox" class="edit-endpoint-check" value="${escapeHtml(ep.alias)}" data-display-name="${escapeHtml(ep.display_name || ep.alias)}" ${assigned.has(ep.alias) ? 'checked' : ''} />
-      <div>
-        <strong>${escapeHtml(ep.display_name || ep.alias)}</strong>
-        <div class="endpoint-sub">${escapeHtml(ep.alias || '')}</div>
-      </div>
-    `;
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'edit-endpoint-check';
+    checkbox.value = ep.alias;
+    checkbox.dataset.displayName = ep.display_name || ep.alias;
+    checkbox.checked = assigned.has(ep.alias);
+    const infoDiv = document.createElement('div');
+    const strong = document.createElement('strong');
+    strong.textContent = ep.display_name || ep.alias;
+    const sub = document.createElement('div');
+    sub.className = 'endpoint-sub';
+    sub.textContent = ep.alias || '';
+    infoDiv.appendChild(strong);
+    infoDiv.appendChild(sub);
+    row.appendChild(checkbox);
+    row.appendChild(infoDiv);
     list.appendChild(row);
   });
 
@@ -758,19 +977,33 @@ function openEdit(meetingId) {
   if (!editInviteeWrap) {
     editInviteeWrap = document.createElement('div');
     editInviteeWrap.id = 'editInviteeWrap';
-    editInviteeWrap.innerHTML = `
-      <div class="section-head slim">
-        <h3>WebRTC email participants</h3>
-      </div>
-      <label>
-        Participant email
-        <div class="inline-input">
-          <input type="email" id="editInviteeEmail" placeholder="participant@example.com" />
-          <button type="button" id="addEditInvitee" class="secondary">Add</button>
-        </div>
-      </label>
-      <div id="editInviteeList" class="invitee-list"></div>
-    `;
+    const sectionHead = document.createElement('div');
+    sectionHead.className = 'section-head slim';
+    const sectionH3 = document.createElement('h3');
+    sectionH3.textContent = 'WebRTC email participants';
+    sectionHead.appendChild(sectionH3);
+    editInviteeWrap.appendChild(sectionHead);
+    const emailLabel = document.createElement('label');
+    emailLabel.appendChild(document.createTextNode('Participant email'));
+    const inlineInput = document.createElement('div');
+    inlineInput.className = 'inline-input';
+    const emailInput = document.createElement('input');
+    emailInput.type = 'email';
+    emailInput.id = 'editInviteeEmail';
+    emailInput.placeholder = 'participant@example.com';
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.id = 'addEditInvitee';
+    addBtn.className = 'secondary';
+    addBtn.textContent = 'Add';
+    inlineInput.appendChild(emailInput);
+    inlineInput.appendChild(addBtn);
+    emailLabel.appendChild(inlineInput);
+    editInviteeWrap.appendChild(emailLabel);
+    const inviteeListDiv = document.createElement('div');
+    inviteeListDiv.id = 'editInviteeList';
+    inviteeListDiv.className = 'invitee-list';
+    editInviteeWrap.appendChild(inviteeListDiv);
     $('#editEndpointList').insertAdjacentElement('afterend', editInviteeWrap);
   }
 
@@ -849,7 +1082,7 @@ async function saveEdit() {
     closeEdit();
     await loadMeetings();
   } catch (err) {
-    showToast(err.message);
+    showToast(safeErrorMessage(err));
   }
 }
 
@@ -938,7 +1171,7 @@ async function init() {
       await loadEndpoints();
       showToast('Endpoints refreshed.');
     } catch (err) {
-      showToast(err.message);
+      showToast(safeErrorMessage(err));
     }
   };
 
@@ -985,7 +1218,7 @@ async function init() {
     await loadEndpoints();
     await loadMeetings();
   } catch (err) {
-    showToast(err.message);
+    showToast(safeErrorMessage(err));
   }
 
   setInterval(async () => {
