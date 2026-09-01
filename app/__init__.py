@@ -59,4 +59,27 @@ def create_app():
     app.register_blueprint(export_bp)
     app.register_blueprint(health_bp)
 
+    @app.after_request
+    def _set_security_headers(response):
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Permissions-Policy'] = (
+            'camera=(), microphone=(), geolocation=(), payment=()'
+        )
+        if 'text/html' in response.content_type:
+            response.headers['Content-Security-Policy'] = (
+                "default-src 'none'; "
+                "script-src 'self'; "
+                "style-src 'self' https://fonts.googleapis.com; "
+                "font-src 'self' https://fonts.gstatic.com; "
+                "img-src 'self'; "
+                "connect-src 'self'; "
+                "frame-ancestors 'none'"
+            )
+            response.headers.setdefault(
+                'Cache-Control', 'no-store, no-cache, must-revalidate'
+            )
+        return response
+
     return app

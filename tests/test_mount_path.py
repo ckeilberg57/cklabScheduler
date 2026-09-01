@@ -22,7 +22,7 @@ prefix before forwarding to Gunicorn:
 The tests below verify:
   1. The Gunicorn SCRIPT_NAME split math (pure unit tests, no Flask)
   2. Flask routes work when Gunicorn-processed WSGI environ is presented
-  3. request.script_root is populated for the template's window.APP_ROOT
+  3. request.script_root is populated in the template's <meta name="app-root"> tag
   4. url_for() generates paths that include /cklabScheduler when SCRIPT_NAME is set
 """
 import contextlib
@@ -196,11 +196,10 @@ class TestScriptNamePropagation:
     def test_app_root_in_rendered_html(self, test_db):
         """
         The index.html template renders:
-            window.APP_ROOT = {{ request.script_root|tojson }};
-        When SCRIPT_NAME=/cklabScheduler, this must render as:
-            window.APP_ROOT = "/cklabScheduler";
-        ensuring all frontend API calls use the correct prefix.
-        Requires an authenticated session to render the main page.
+            <meta name="app-root" content="/cklabScheduler" />
+        When SCRIPT_NAME=/cklabScheduler, this must appear in the <head> so that
+        the frontend JavaScript reads APP_ROOT from the meta tag instead of an
+        inline script. Requires an authenticated session to render the main page.
         """
         from app.auth.local import hash_password
         from app.auth.models import create_local_user
@@ -218,9 +217,9 @@ class TestScriptNamePropagation:
                 )
         assert resp.status_code == 200
         body = resp.get_data(as_text=True)
-        # tojson renders the string with surrounding double-quotes
+        assert 'name="app-root"' in body, "Expected meta[name=app-root] in rendered HTML"
         assert f'"{SCRIPT_NAME}"' in body, \
-            f"Expected '\"{ SCRIPT_NAME }\"' in rendered HTML for window.APP_ROOT"
+            f"Expected '{SCRIPT_NAME}' as meta[name=app-root] content value"
 
     def test_static_url_for_includes_script_name(self, test_db):
         """

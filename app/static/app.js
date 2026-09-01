@@ -8,7 +8,7 @@ const state = {
   adjustmentMinutesByMeeting: {},
 };
 
-const APP_ROOT = (window.APP_ROOT || '').replace(/\/$/, '');
+const APP_ROOT = (document.querySelector('meta[name="app-root"]')?.content || '').replace(/\/$/, '');
 const API_BASE = `${APP_ROOT}/api`;
 const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
@@ -53,6 +53,15 @@ function escapeHtml(str) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+}
+
+function safeHref(url) {
+  try {
+    const parsed = new URL(String(url || ''));
+    return parsed.protocol === 'https:' ? parsed.href : null;
+  } catch {
+    return null;
+  }
 }
 
 async function api(path, options = {}) {
@@ -189,20 +198,29 @@ function renderInvitees() {
   const list = $('#inviteeList');
   if (!list) return;
 
+  list.textContent = '';
   if (!state.invitees.length) {
-    list.innerHTML = '<div class="empty">No WebRTC email participants added.</div>';
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = 'No WebRTC email participants added.';
+    list.appendChild(empty);
     return;
   }
 
-  list.innerHTML = state.invitees.map((item) => `
-    <div class="invitee-row">
-      <span>${escapeHtml(item.email)}</span>
-      <button type="button" class="tiny-btn remove-invitee" data-email="${escapeHtml(item.email)}">Remove</button>
-    </div>
-  `).join('');
-
-  list.querySelectorAll('.remove-invitee').forEach((btn) => {
-    btn.onclick = () => removeInvitee(btn.dataset.email);
+  state.invitees.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'invitee-row';
+    const span = document.createElement('span');
+    span.textContent = item.email;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tiny-btn remove-invitee';
+    btn.dataset.email = item.email;
+    btn.textContent = 'Remove';
+    btn.onclick = () => removeInvitee(item.email);
+    row.appendChild(span);
+    row.appendChild(btn);
+    list.appendChild(row);
   });
 }
 
@@ -211,13 +229,16 @@ function renderInviteeChips(invitees, meetingId) {
     return '<span class="muted">No WebRTC email participants</span>';
   }
 
-  return invitees.map((inv) => `
+  return invitees.map((inv) => {
+    const joinHref = safeHref(inv.join_url);
+    return `
     <div class="chip-row">
       <span class="chip">${escapeHtml(inv.email)} • ${escapeHtml(inv.email_status || 'pending')}</span>
       <button type="button" class="tiny-btn resend-invite-btn" data-meeting-id="${meetingId}" data-invitee-id="${inv.id}">Resend invite</button>
-      ${inv.join_url ? `<a class="tiny-btn" href="${escapeHtml(inv.join_url)}" target="_blank" rel="noopener noreferrer">Open URL</a>` : ''}
+      ${joinHref ? `<a class="tiny-btn" href="${escapeHtml(joinHref)}" target="_blank" rel="noopener noreferrer">Open URL</a>` : ''}
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 async function resendInvite(meetingId, inviteeId) {
@@ -756,21 +777,31 @@ function openEdit(meetingId) {
   function renderEditInvitees() {
     const editList = $('#editInviteeList');
     if (!editList) return;
+    editList.textContent = '';
     if (!window.currentEditInvitees.length) {
-      editList.innerHTML = '<div class="empty">No WebRTC email participants added.</div>';
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'No WebRTC email participants added.';
+      editList.appendChild(empty);
       return;
     }
-    editList.innerHTML = window.currentEditInvitees.map((item) => `
-      <div class="invitee-row">
-        <span>${escapeHtml(item.email)}</span>
-        <button type="button" class="tiny-btn remove-edit-invitee" data-email="${escapeHtml(item.email)}">Remove</button>
-      </div>
-    `).join('');
-    editList.querySelectorAll('.remove-edit-invitee').forEach((btn) => {
+    window.currentEditInvitees.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'invitee-row';
+      const span = document.createElement('span');
+      span.textContent = item.email;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tiny-btn remove-edit-invitee';
+      btn.dataset.email = item.email;
+      btn.textContent = 'Remove';
       btn.onclick = () => {
-        window.currentEditInvitees = window.currentEditInvitees.filter((item) => item.email !== btn.dataset.email);
+        window.currentEditInvitees = window.currentEditInvitees.filter((i) => i.email !== item.email);
         renderEditInvitees();
       };
+      row.appendChild(span);
+      row.appendChild(btn);
+      editList.appendChild(row);
     });
   }
 
