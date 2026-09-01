@@ -33,17 +33,30 @@ function randomAlias() {
   return out;
 }
 
-function safeErrorMessage(error) {
+function getErrorText(error) {
   if (error instanceof Error) {
-    return error.message || 'An unexpected error occurred.';
+    return typeof error.message === 'string'
+      ? error.message
+      : 'An unexpected error occurred.';
   }
-  return String(error || 'An unexpected error occurred.');
+  if (typeof error === 'string') {
+    return error;
+  }
+  return 'An unexpected error occurred.';
 }
 
 function showToast(message) {
   const el = document.createElement('div');
   el.className = 'toast';
-  el.textContent = String(message ?? '');
+  el.textContent = typeof message === 'string' ? message : '';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2800);
+}
+
+function showErrorToast(error) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = getErrorText(error);
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2800);
 }
@@ -295,7 +308,7 @@ async function resendInvite(meetingId, inviteeId) {
     showToast('Invite resent.');
     await loadMeetings();
   } catch (err) {
-    showToast(safeErrorMessage(err));
+    showErrorToast(err);
   }
 }
 
@@ -877,7 +890,7 @@ async function createMeeting(e) {
     renderInvitees();
     await loadMeetings();
   } catch (err) {
-    showToast(safeErrorMessage(err));
+    showErrorToast(err);
   }
 }
 
@@ -896,7 +909,7 @@ async function adjustMeeting(id, minutes) {
     state.adjustmentMinutesByMeeting[id] = 15;
     await loadMeetings();
   } catch (err) {
-    showToast(safeErrorMessage(err));
+    showErrorToast(err);
   }
 }
 
@@ -906,7 +919,7 @@ async function deleteMeeting(id) {
     showToast('Meeting deleted.');
     await loadMeetings();
   } catch (err) {
-    showToast(safeErrorMessage(err));
+    showErrorToast(err);
   }
 }
 
@@ -919,7 +932,7 @@ async function redialEndpoint(meetingId, endpointAlias) {
     showToast(`Dial again requested for ${endpointAlias}`);
     await loadMeetings();
   } catch (err) {
-    showToast(safeErrorMessage(err));
+    showErrorToast(err);
   }
 }
 
@@ -1082,7 +1095,7 @@ async function saveEdit() {
     closeEdit();
     await loadMeetings();
   } catch (err) {
-    showToast(safeErrorMessage(err));
+    showErrorToast(err);
   }
 }
 
@@ -1171,7 +1184,7 @@ async function init() {
       await loadEndpoints();
       showToast('Endpoints refreshed.');
     } catch (err) {
-      showToast(safeErrorMessage(err));
+      showErrorToast(err);
     }
   };
 
@@ -1218,7 +1231,7 @@ async function init() {
     await loadEndpoints();
     await loadMeetings();
   } catch (err) {
-    showToast(safeErrorMessage(err));
+    showErrorToast(err);
   }
 
   setInterval(async () => {

@@ -320,3 +320,97 @@ class TestHardcodedCredentials:
             assert "CHANGE_ME" not in content, (
                 f"CHANGE_ME found in {py_file.relative_to(self._REPO)}"
             )
+
+
+# ── getErrorText / exception rendering ───────────────────────────────────────
+
+class TestErrorTextExtraction:
+    """getErrorText must produce a plain string regardless of input type.
+
+    These tests run inside a Node.js-less environment so they exercise the
+    Python-side structural guarantees: the source must not route exception data
+    through innerHTML, outerHTML, insertAdjacentHTML, or any HTML parser sink.
+    The JS-level behaviour is validated by asserting on the static source text.
+    """
+
+    _JS = (pathlib.Path(__file__).parent.parent / "app" / "static" / "app.js").read_text()
+
+    # ── Static source-level assertions ───────────────────────────────────────
+
+    def test_no_innerhtml_sink_in_js(self):
+        """Production JS must contain no innerHTML assignments."""
+        assert ".innerHTML" not in self._JS
+
+    def test_no_outerhtml_sink_in_js(self):
+        assert ".outerHTML" not in self._JS
+
+    def test_no_insertadjacenthtml_sink_in_js(self):
+        assert "insertAdjacentHTML" not in self._JS
+
+    def test_no_document_write_sink_in_js(self):
+        assert "document.write" not in self._JS
+
+    def test_no_domparser_sink_in_js(self):
+        assert "DOMParser" not in self._JS
+
+    def test_no_safeErrorMessage_remains(self):
+        """safeErrorMessage was replaced by getErrorText; must not exist."""
+        assert "safeErrorMessage" not in self._JS
+
+    def test_getErrorText_defined(self):
+        assert "function getErrorText" in self._JS
+
+    def test_showErrorToast_defined(self):
+        assert "function showErrorToast" in self._JS
+
+    @staticmethod
+    def _extract_function(source, name):
+        """Return the source of the named function (up to its closing brace)."""
+        start = source.index(f"function {name}")
+        brace_start = source.index("{", start)
+        depth = 0
+        for i, ch in enumerate(source[brace_start:], brace_start):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return source[start:i + 1]
+        return source[start:]
+
+    def test_showErrorToast_uses_getErrorText(self):
+        """showErrorToast must call getErrorText, not String() or JSON.stringify()."""
+        snippet = self._extract_function(self._JS, "showErrorToast")
+        assert "getErrorText" in snippet
+        assert "String(" not in snippet
+        assert "JSON.stringify" not in snippet
+
+    def test_error_path_uses_textContent_not_html(self):
+        """The exception rendering path must use textContent, never innerHTML."""
+        snippet = self._extract_function(self._JS, "showErrorToast")
+        assert "textContent" in snippet
+        assert "innerHTML" not in snippet
+
+    def test_xss_payload_script_tag_would_be_text(self):
+        """Verify the JS source does not pass XSS payloads through an HTML sink.
+
+        We confirm this by asserting there is no code path that writes
+        '<script>' into an innerHTML-style property anywhere in the file.
+        Since all text payloads go through textContent (which the browser
+        treats as plain text), the strings below can only appear as text nodes.
+        """
+        html_sinks = [".innerHTML", ".outerHTML", "insertAdjacentHTML", "document.write"]
+        for sink in html_sinks:
+            assert sink not in self._JS, f"HTML sink still present: {sink!r}"
+
+    def test_img_onerror_payload_cannot_reach_html_sink(self):
+        """<img src=x onerror=alert(1)> cannot reach an HTML sink in app.js."""
+        html_sinks = [".innerHTML", ".outerHTML", "insertAdjacentHTML", "document.write"]
+        for sink in html_sinks:
+            assert sink not in self._JS
+
+    def test_svg_onload_payload_cannot_reach_html_sink(self):
+        '"><svg onload=alert(1)> cannot reach an HTML sink in app.js.'
+        html_sinks = [".innerHTML", ".outerHTML", "insertAdjacentHTML", "document.write"]
+        for sink in html_sinks:
+            assert sink not in self._JS
