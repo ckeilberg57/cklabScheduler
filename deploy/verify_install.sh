@@ -140,7 +140,8 @@ if [[ -f "${ENV_FILE}" ]]; then
         fail "${ENV_FILE} owner: got ${ENV_OWNER}, expected root:${SVC_USER}"
     fi
     # Verify required keys are present (values are not inspected or printed)
-    for key in REG_STATUS_HOST COMMAND_HOST MGMT_USER MGMT_PASS SECRET_KEY DB_PATH APP_DISPLAY_NAME; do
+    for key in REG_STATUS_HOST COMMAND_HOST MGMT_USER MGMT_PASS SECRET_KEY DB_PATH APP_DISPLAY_NAME \
+               LOCAL_AUTH_ENABLED ENTRA_ENABLED SESSION_COOKIE_SECURE; do
         if grep -q "^${key}=" "${ENV_FILE}" 2>/dev/null; then
             ok "  Key present: ${key}"
         else
@@ -178,8 +179,17 @@ for f in \
     app/scheduler_jobs.py \
     app/routes/meetings.py \
     app/routes/health.py \
+    app/routes/auth.py \
     app/static/app.js \
-    app/templates/index.html
+    app/templates/index.html \
+    app/templates/login.html \
+    app/templates/access_denied.html \
+    app/auth/__init__.py \
+    app/auth/models.py \
+    app/auth/local.py \
+    app/auth/entra.py \
+    app/auth/decorators.py \
+    app/manage_users.py
 do
     if [[ -f "${APP_DIR}/${f}" ]]; then
         ok "${f}"
@@ -221,7 +231,7 @@ fi
 
 chk "gunicorn binary in venv" test -f "${VENV}/bin/gunicorn"
 
-for pkg in Flask gunicorn APScheduler requests python-dotenv; do
+for pkg in Flask gunicorn APScheduler requests python-dotenv Flask-Login Flask-WTF msal; do
     if "${VENV}/bin/pip" show "${pkg}" &>/dev/null; then
         VER="$("${VENV}/bin/pip" show "${pkg}" 2>/dev/null | grep '^Version:' | awk '{print $2}')"
         ok "pip: ${pkg} ${VER}"
@@ -455,6 +465,159 @@ if [[ -f "${DB_PATH}" ]]; then
     fi
 else
     fail "${DB_PATH} does not exist"
+fi
+
+# ── 12. Authentication ────────────────────────────────────────────────────────
+hdr "Authentication"
+
+# Read a single value from the env file without printing it.
+# Strips surrounding double-quotes if present.
+_env_val() {
+    grep "^${1}=" "${ENV_FILE}" 2>/dev/null \
+        | sed 's/^[^=]*="\?\([^"]*\)"\?$/\1/' | head -1
+}
+
+# Check whether a key exists AND has a non-empty value, without printing it.
+_env_nonempty() {
+    local val
+    val="$(_env_val "$1")"
+    [[ -n "${val}" ]]
+}
+
+if [[ ! -f "${ENV_FILE}" ]]; then
+    fail "Cannot check auth configuration — ${ENV_FILE} not readable"
+else
+    LOCAL_AUTH="$(_env_val LOCAL_AUTH_ENABLED)"
+    ENTRA_AUTH="$(_env_val ENTRA_ENABLED)"
+    SESSION_SECURE="$(_env_val SESSION_COOKIE_SECURE)"
+
+    LOCAL_ON=false; ENTRA_ON=false
+    [[ "${LOCAL_AUTH,,}" == "true" ]] && LOCAL_ON=true
+    [[ "${ENTRA_AUTH,,}" == "true" ]] && ENTRA_ON=true
+
+    # Bootstrap protection: at least one method must be enabled
+    if [[ "${LOCAL_ON}" == "false" && "${ENTRA_ON}" == "false" ]]; then
+        fail "Both LOCAL_AUTH_ENABLED and ENTRA_ENABLED are false — application will reject every login"
+    fi
+
+    # ── Local authentication ────────────────────────────────────────────────
+    if [[ "${LOCAL_ON}" == "true" ]]; then
+        ok "Local authentication: enabled"
+        if [[ -f "${DB_PATH}" ]]; then
+            ADMIN_COUNT="$(sqlite3 "file:${DB_PATH}?mode=ro" \
+                "SELECT COUNT(*) FROM users WHERE role='administrator' AND enabled=1 AND auth_provider='local';" \
+                2>/dev/null || echo 'error')"
+            if [[ "${ADMIN_COUNT}" =~ ^[1-9][0-9]*$ ]]; then
+                ok "Local administrator: configured (${ADMIN_COUNT} enabled)"
+            elif [[ "${ADMIN_COUNT}" == "0" ]]; then
+                fail "Local authentication is enabled but no enabled local administrator exists — run: python -m app.manage_users create --role administrator"
+            else
+                fail "Unable to query users table (got: ${ADMIN_COUNT})"
+            fi
+        else
+            fail "Database not found — cannot verify local administrator"
+        fi
+    else
+        skip "Local authentication: disabled"
+    fi
+
+    # ── Microsoft Entra ID ──────────────────────────────────────────────────
+    if [[ "${ENTRA_ON}" == "true" ]]; then
+        ok "Microsoft Entra ID: enabled"
+        for entra_key in ENTRA_TENANT_ID ENTRA_CLIENT_ID ENTRA_REDIRECT_URI ENTRA_AUTHORITY; do
+            if _env_nonempty "${entra_key}"; then
+                ok "  ${entra_key}: configured"
+            else
+                fail "  ${entra_key}: missing or empty"
+            fi
+        done
+        # Credential: check presence and non-emptiness without printing value
+        if grep -q "^ENTRA_CLIENT_SECRET=" "${ENV_FILE}" 2>/dev/null; then
+            ENTRA_SECRET_LINE="$(grep "^ENTRA_CLIENT_SECRET=" "${ENV_FILE}" 2>/dev/null || true)"
+            if [[ "${ENTRA_SECRET_LINE}" == 'ENTRA_CLIENT_SECRET=' || \
+                  "${ENTRA_SECRET_LINE}" == 'ENTRA_CLIENT_SECRET=""' ]]; then
+                fail "  Entra credential: ENTRA_CLIENT_SECRET is empty"
+            else
+                ok "  Entra credential: configured"
+            fi
+        else
+            fail "  ENTRA_CLIENT_SECRET: not present in env file"
+        fi
+    else
+        skip "Microsoft Entra ID: disabled"
+    fi
+
+    # ── Session security ────────────────────────────────────────────────────
+    if [[ "${SESSION_SECURE,,}" == "true" ]]; then
+        ok "Secure session cookie: enabled (SESSION_COOKIE_SECURE=true)"
+    elif [[ "${SESSION_SECURE,,}" == "false" ]]; then
+        fail "SESSION_COOKIE_SECURE=false — must be true in production HTTPS deployment"
+    else
+        fail "SESSION_COOKIE_SECURE missing or invalid (got: '${SESSION_SECURE:-empty}')"
+    fi
+
+    # Flask SECRET_KEY (non-empty already verified in section 4; confirm here for auth summary)
+    if _env_nonempty "SECRET_KEY"; then
+        ok "Flask SECRET_KEY: configured"
+    else
+        fail "Flask SECRET_KEY: empty — reinstall to regenerate"
+    fi
+fi
+
+# ── Auth database tables ────────────────────────────────────────────────────
+if [[ -f "${DB_PATH}" ]]; then
+    AUTH_TABLES="$(sqlite3 "file:${DB_PATH}?mode=ro" ".tables" 2>/dev/null || echo '')"
+    for tbl in users auth_audit_log; do
+        if printf '%s' "${AUTH_TABLES}" | grep -qw "${tbl}"; then
+            ok "Auth table: ${tbl}"
+        else
+            fail "Auth table missing: ${tbl} — run: python -m app.database init_db"
+        fi
+    done
+else
+    fail "Database not found — cannot verify auth tables"
+fi
+
+# ── Authentication route checks (via Apache) ────────────────────────────────
+BASE_URL="https://${HOSTNAME_ARG}/cklabScheduler"
+
+# Login page must be publicly accessible (200)
+LOGIN_CODE="$(curl --silent --insecure --max-time 10 \
+    --write-out '%{http_code}' --output /dev/null \
+    "${BASE_URL}/login" 2>/dev/null || echo '000')"
+if [[ "${LOGIN_CODE}" == "200" ]]; then
+    ok "Login endpoint: ${BASE_URL}/login → 200"
+else
+    fail "Login endpoint: ${BASE_URL}/login → ${LOGIN_CODE} (expected 200)"
+fi
+
+# Unauthenticated UI root must redirect toward login (301 or 302)
+ROOT_CODE="$(curl --silent --insecure --max-time 10 \
+    --write-out '%{http_code}' --output /dev/null \
+    "${BASE_URL}/" 2>/dev/null || echo '000')"
+if [[ "${ROOT_CODE}" == "302" || "${ROOT_CODE}" == "301" ]]; then
+    ok "Unauthenticated UI: ${BASE_URL}/ → ${ROOT_CODE} (redirects to login)"
+else
+    fail "Unauthenticated UI: ${BASE_URL}/ → ${ROOT_CODE} (expected 301/302 redirect to login)"
+fi
+
+# Protected API must return 401, not an HTML redirect
+API_CODE="$(curl --silent --insecure --max-time 10 \
+    --write-out '%{http_code}' --output /dev/null \
+    "${BASE_URL}/api/meetings" 2>/dev/null || echo '000')"
+if [[ "${API_CODE}" == "401" ]]; then
+    ok "Unauthenticated API: ${BASE_URL}/api/meetings → 401"
+else
+    fail "Unauthenticated API: ${BASE_URL}/api/meetings → ${API_CODE} (expected 401)"
+fi
+
+# Confirm the 401 body is JSON, not an HTML redirect page
+API_BODY="$(curl --silent --insecure --max-time 10 \
+    "${BASE_URL}/api/meetings" 2>/dev/null || echo '')"
+if printf '%s' "${API_BODY}" | python3 -c "import sys,json; json.load(sys.stdin)" &>/dev/null; then
+    ok "Unauthenticated API response is JSON (not HTML)"
+else
+    fail "Unauthenticated API response is not valid JSON — may be an HTML page or error"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
