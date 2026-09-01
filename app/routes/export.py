@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, Response, jsonify, request
 
+from app.auth.decorators import login_required
 from app.database import db
 from app.meeting_utils import classify_meeting, iso
 
@@ -12,6 +13,7 @@ export_bp = Blueprint("export", __name__)
 
 
 @export_bp.route("/api/meetings/<int:meeting_id>/export")
+@login_required
 def api_export_meeting(meeting_id):
     with closing(db()) as conn:
         meeting = conn.execute("SELECT * FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
@@ -79,6 +81,7 @@ def api_export_meeting(meeting_id):
 
 
 @export_bp.route("/api/export/meetings")
+@login_required
 def api_export_meetings():
     start = request.args.get("start")
     end = request.args.get("end")

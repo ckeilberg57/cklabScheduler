@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in — {{ app_display_name }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: var(--bg);
+    }
+    .login-shell {
+      width: 100%;
+      max-width: 440px;
+      padding: 24px;
+    }
+    .login-box {
+      padding: 40px 36px;
+    }
+    .login-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    .login-header h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin: 0;
+    }
+    .login-header .eyebrow {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+    .login-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 0 0 24px;
+    }
+    .login-box label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+    .login-box label input {
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 0.95rem;
+      color: var(--text);
+      background: #fff;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .login-box label input:focus {
+      border-color: var(--blue);
+    }
+    .login-error {
+      background: #fff0f0;
+      border: 1px solid #f5c6cb;
+      color: #721c24;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 0.88rem;
+      margin-bottom: 16px;
+    }
+    .auth-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 20px 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .auth-divider::before,
+    .auth-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    .btn-microsoft {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--text);
+      font-size: 0.9rem;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s, transform 0.15s;
+    }
+    .btn-microsoft:hover {
+      background: #f5f7ff;
+      transform: translateY(-1px);
+    }
+    .btn-microsoft svg {
+      flex-shrink: 0;
+    }
+    .primary.wide {
+      width: 100%;
+      padding: 10px 14px;
+      font-size: 0.95rem;
+      margin-top: 4px;
+    }
+    .primary {
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      font-weight: 600;
+    }
+    .primary:hover { background: #3a68c0; }
+  </style>
+</head>
+<body>
+  <div class="login-shell">
+    <div class="login-box glass">
+
+      <div class="login-header">
+        <div class="brand-mark">C</div>
+        <div>
+          <div class="eyebrow">Whiteglove Operations</div>
+          <h1>{{ app_display_name }}</h1>
+        </div>
+      </div>
+
+      <h2 class="login-title">Sign in</h2>
+
+      {% if error %}
+      <div class="login-error" role="alert">{{ error }}</div>
+      {% endif %}
+
+      {% if local_auth_enabled %}
+      <form method="post" action="{{ url_for('auth.login') }}{% if next %}?next={{ next | urlencode }}{% endif %}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <input type="hidden" name="next" value="{{ next }}" />
+
+        <label>
+          Username
+          <input type="text" name="username" value="{{ prefill_username }}" required autofocus autocomplete="username" />
+        </label>
+
+        <label>
+          Password
+          <input type="password" name="password" required autocomplete="current-password" />
+        </label>
+
+        <button type="submit" class="primary wide">Sign in</button>
+      </form>
+      {% endif %}
+
+      {% if local_auth_enabled and entra_auth_enabled %}
+      <div class="auth-divider"><span>or</span></div>
+      {% endif %}
+
+      {% if entra_auth_enabled %}
+      <a href="{{ url_for('auth.entra_login') }}" class="btn-microsoft">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 23 23">
+          <path fill="#f35325" d="M1 1h10v10H1z"/>
+          <path fill="#81bc06" d="M12 1h10v10H12z"/>
+          <path fill="#05a6f0" d="M1 12h10v10H1z"/>
+          <path fill="#ffba08" d="M12 12h10v10H12z"/>
+        </svg>
+        Sign in with Microsoft
+      </a>
+      {% endif %}
+
+    </div>
+  </div>
+</body>
+</html>

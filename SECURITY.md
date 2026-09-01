@@ -4,6 +4,65 @@ This document describes the security model for cklabScheduler and guidance for o
 
 ---
 
+## Authentication
+
+cklabScheduler supports two authentication methods, independently enabled:
+
+| Method | Description |
+|---|---|
+| **Local accounts** | SQLite-stored users with PBKDF2-SHA256 hashed passwords. Enabled by default. |
+| **Microsoft Entra ID** | OIDC Authorization Code Flow via MSAL. Single-tenant. Optional. |
+
+At least one method must be enabled at all times. The installer enforces this — it will not write a configuration with both methods disabled. The `Settings.validate_web()` startup check also rejects configurations where both are disabled.
+
+**Roles:**
+
+| Role | Access |
+|---|---|
+| `administrator` | Full access — satisfies any `has_role()` check |
+| `scheduler_user` | Standard access — meeting creation and management |
+
+Entra app roles map as follows: `Scheduler.Administrator` → `administrator`, `Scheduler.User` → `scheduler_user`. Users with no assigned role are denied access after authentication.
+
+---
+
+## Local account password security
+
+- Passwords are hashed with **Werkzeug `generate_password_hash`** using the `pbkdf2:sha256:600000` scheme (PBKDF2-HMAC-SHA256 with 600,000 iterations).
+- Minimum password length: **12 characters**, enforced at creation and reset.
+- Passwords are **never stored in plaintext**, never logged, never displayed after entry, and never passed as command-line arguments.
+- The installer collects the initial admin password using `read -rs` (no terminal echo) and passes it to Python via an environment variable — not via `argv`.
+- The `manage_users` CLI uses `getpass.getpass()` (reads from `/dev/tty`, not echoed).
+
+---
+
+## Session security
+
+Sessions are signed with `SECRET_KEY` (generated automatically by the installer via `openssl rand -hex 32`).
+
+| Cookie attribute | Value |
+|---|---|
+| `Secure` | `true` in production (HTTPS only) |
+| `HttpOnly` | `true` — JavaScript cannot access the session cookie |
+| `SameSite` | `Lax` — allows OAuth redirect while protecting against CSRF |
+| Lifetime | 8 hours from last request |
+
+**Session fixation prevention:** `session.clear()` is called before `login_user()` on every login — this invalidates any session state accumulated before authentication.
+
+**Open redirect protection:** The `?next=` parameter on the login URL is validated with `urlparse` — only same-origin paths are accepted; any URL with a netloc (host) component is rejected.
+
+---
+
+## CSRF protection
+
+Flask-WTF (`CSRFProtect`) is applied globally. All state-changing requests must include a valid CSRF token.
+
+- **HTML forms**: a hidden `{{ csrf_token() }}` field is included in all forms.
+- **JSON API calls** (AJAX): the token is embedded in a `<meta name="csrf-token">` tag and sent as an `X-CSRFToken` request header.
+- The CSRF token is tied to the session and expires with it.
+
+---
+
 ## Credential storage
 
 All runtime secrets are stored in `/etc/cklabScheduler/cklabScheduler.env`.
@@ -13,12 +72,26 @@ All runtime secrets are stored in `/etc/cklabScheduler/cklabScheduler.env`.
 | `MGMT_PASS` | Pexip Management API password |
 | `SECRET_KEY` | Flask session signing key (generated automatically; never prompted) |
 | `O365_CLIENT_SECRET` | Azure AD client secret for Microsoft 365 integration |
+| `ENTRA_CLIENT_SECRET` | Microsoft Entra client secret (when Entra auth is enabled) |
 
 **File permissions:** `640 root:cklabscheduler` — readable only by root and the `cklabscheduler` service account.
 
 **`SECRET_KEY` generation:** The installer generates this value with `openssl rand -hex 32` and writes it directly to the env file. It is never echoed to the terminal and is never prompted from the operator.
 
 **Passwords at install time:** All secrets are collected via prompts that suppress terminal echo (`read -rs`). They are never written to shell history or log files.
+
+---
+
+## Audit logging
+
+Authentication events are written to two destinations:
+
+1. **Python logger** (`app.auth`): appears in `journalctl -u cklab-scheduler-web`.
+2. **`auth_audit_log` SQLite table**: persists across restarts; queryable via `sqlite3 /var/lib/cklabScheduler/scheduler.db`.
+
+Events logged: login success, login failure, logout, account disabled, invalid password, Entra auth success/failure, role assignment changes.
+
+**What is never logged:** passwords, password hashes, client secrets, authorization codes, access tokens, ID tokens, refresh tokens, session cookies.
 
 ---
 
@@ -86,11 +159,18 @@ The `.gitignore` in this repository excludes `.env`, `.env.*`, `*.db`, `*.key`, 
 
 ## Health endpoint
 
-`GET /api/health` returns operational status but does not expose:
+`GET /api/health` is a **public endpoint** (no authentication required). It returns operational status including an `authentication` field showing which methods are enabled:
+
+```json
+"authentication": { "local_enabled": true, "entra_enabled": false }
+```
+
+It does **not** expose:
 - Pexip hostnames
 - API credentials
 - Database paths
 - Secret keys
+- Tenant IDs, client IDs, or any Entra configuration details
 
 ---
 

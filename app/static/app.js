@@ -10,6 +10,7 @@ const state = {
 
 const APP_ROOT = (window.APP_ROOT || '').replace(/\/$/, '');
 const API_BASE = `${APP_ROOT}/api`;
+const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -55,10 +56,18 @@ function escapeHtml(str) {
 }
 
 async function api(path, options = {}) {
-  const resp = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+  const method = (options.method || 'GET').toUpperCase();
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (method !== 'GET' && method !== 'HEAD') {
+    headers['X-CSRFToken'] = CSRF_TOKEN;
+  }
+
+  const resp = await fetch(`${API_BASE}${path}`, { ...options, headers });
+
+  if (resp.status === 401) {
+    window.location.href = `${APP_ROOT}/login`;
+    return;
+  }
 
   const data = await resp.json();
   if (!resp.ok || data.ok === false) {

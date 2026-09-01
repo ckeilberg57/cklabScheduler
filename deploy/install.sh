@@ -22,7 +22,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # ── Progress tracking ─────────────────────────────────────────────────────────
 _STEP=0
-_TOTAL=16
+_TOTAL=17
 STAGE="startup"
 
 trap 'printf "\n\033[31mFATAL:\033[0m Installation failed during: %s (line %d)\nRerun the installer to retry.\n" "${STAGE}" "${BASH_LINENO[0]}" >&2' ERR
@@ -354,6 +354,58 @@ else
     echo "  Self-signed certificate generated."
 fi
 
+echo
+echo "── Authentication ─────────────────────────────────────────────────────"
+echo "  Local admin accounts are enabled by default."
+echo "  At least one authentication method must remain enabled."
+echo
+LOCAL_AUTH_ENABLED_VAL="true"
+ENTRA_ENABLED_VAL="false"
+ADMIN_USER=""
+ADMIN_PASS=""
+ENTRA_TENANT_ID_VAL=""
+ENTRA_CLIENT_ID_VAL=""
+ENTRA_CLIENT_SECRET_VAL=""
+ENTRA_REDIRECT_URI_VAL=""
+ENTRA_POST_LOGOUT_REDIRECT_URI_VAL=""
+
+echo "  Initial local admin account"
+ADMIN_USER="$(prompt_required "Admin username")"
+while true; do
+    ADMIN_PASS="$(prompt_secret "Admin password (min 12 chars) [hidden]")"
+    ADMIN_PASS_CONFIRM="$(prompt_secret "Confirm admin password [hidden]")"
+    if [[ "${ADMIN_PASS}" != "${ADMIN_PASS_CONFIRM}" ]]; then
+        echo "  Passwords do not match — please try again." > /dev/tty 2>/dev/null || true
+        continue
+    fi
+    if [[ "${#ADMIN_PASS}" -lt 12 ]]; then
+        echo "  Password is too short (minimum 12 characters) — please try again." > /dev/tty 2>/dev/null || true
+        continue
+    fi
+    break
+done
+unset ADMIN_PASS_CONFIRM
+
+echo
+if prompt_yesno "Enable Microsoft Entra ID (Azure AD) authentication?" "N"; then
+    ENTRA_ENABLED_VAL="true"
+    ENTRA_TENANT_ID_VAL="$(prompt_required "Entra Tenant ID (from Azure portal)")"
+    ENTRA_CLIENT_ID_VAL="$(prompt_required  "Entra Application (Client) ID")"
+    ENTRA_CLIENT_SECRET_VAL="$(prompt_secret "Entra Client Secret [hidden]")"
+    _ENTRA_DEFAULT_REDIRECT="https://${SERVER_HOSTNAME}/cklabScheduler/auth/callback"
+    ENTRA_REDIRECT_URI_VAL="$(prompt_default "Entra redirect URI" "${_ENTRA_DEFAULT_REDIRECT}")"
+    _ENTRA_DEFAULT_POST_LOGOUT="https://${SERVER_HOSTNAME}/cklabScheduler/login"
+    ENTRA_POST_LOGOUT_REDIRECT_URI_VAL="$(prompt_default "Post-logout redirect URI" "${_ENTRA_DEFAULT_POST_LOGOUT}")"
+
+    echo
+    if prompt_yesno "Keep local admin accounts enabled alongside Entra?" "Y"; then
+        LOCAL_AUTH_ENABLED_VAL="true"
+    else
+        LOCAL_AUTH_ENABLED_VAL="false"
+        echo "  Local accounts disabled. Users will authenticate via Entra ID only." > /dev/tty 2>/dev/null || true
+    fi
+fi
+
 # Generate SECRET_KEY — written directly to env file; never printed
 SECRET_KEY="$(openssl rand -hex 32)"
 
@@ -395,6 +447,20 @@ chmod 640 "${ENV_FILE}"
     write_env_line "SECRET_KEY" "${SECRET_KEY}"
     printf '\n'
 
+    printf '# Authentication\n'
+    write_env_line "LOCAL_AUTH_ENABLED"    "${LOCAL_AUTH_ENABLED_VAL}"
+    write_env_line "ENTRA_ENABLED"         "${ENTRA_ENABLED_VAL}"
+    write_env_line "SESSION_COOKIE_SECURE" "true"
+    if [[ "${ENTRA_ENABLED_VAL}" == "true" ]]; then
+        write_env_line "ENTRA_TENANT_ID"                "${ENTRA_TENANT_ID_VAL}"
+        write_env_line "ENTRA_CLIENT_ID"                "${ENTRA_CLIENT_ID_VAL}"
+        write_env_line "ENTRA_CLIENT_SECRET"            "${ENTRA_CLIENT_SECRET_VAL}"
+        write_env_line "ENTRA_AUTHORITY"                "https://login.microsoftonline.com/${ENTRA_TENANT_ID_VAL}"
+        write_env_line "ENTRA_REDIRECT_URI"             "${ENTRA_REDIRECT_URI_VAL}"
+        write_env_line "ENTRA_POST_LOGOUT_REDIRECT_URI" "${ENTRA_POST_LOGOUT_REDIRECT_URI_VAL}"
+    fi
+    printf '\n'
+
     printf '# Microsoft 365\n'
     write_env_line "O365_ENABLED" "${O365_ENABLED_VAL}"
     if [[ "${O365_ENABLED_VAL}" == "true" ]]; then
@@ -425,14 +491,40 @@ chown "${SVC_USER}:${SVC_USER}" "${DB_PATH}" 2>/dev/null || true
 chmod 640 "${DB_PATH}" 2>/dev/null || true
 echo "  Schema ready at ${DB_PATH}."
 
-# ── 12. Systemd unit files ───────────────────────────────────────────────────
+# ── 12. Create initial admin user ────────────────────────────────────────────
+info "Creating initial admin user"
+if [[ "${LOCAL_AUTH_ENABLED_VAL}" == "true" ]]; then
+    (
+        cd "${APP_DIR}"
+        # Password is passed via environment variable, not a command-line argument,
+        # so it does not appear in the process list.
+        ADMIN_USER="${ADMIN_USER}" ADMIN_PASS="${ADMIN_PASS}" \
+        DB_PATH="${DB_PATH}" \
+        "${VENV}/bin/python" -c "
+import os
+from app.auth.local import hash_password
+from app.auth.models import create_local_user
+user = os.environ['ADMIN_USER']
+pw   = os.environ['ADMIN_PASS']
+create_local_user(user, hash_password(pw), role='administrator')
+print('  Admin user created:', user)
+"
+    )
+else
+    echo "  Local auth disabled — no local admin user created."
+    echo "  Users will authenticate exclusively via Microsoft Entra ID."
+fi
+# Clear credentials from shell memory
+unset ADMIN_PASS ADMIN_USER
+
+# ── 13. Systemd unit files ───────────────────────────────────────────────────
 info "Installing systemd unit files"
 cp "${SCRIPT_DIR}/cklab-scheduler-web.service"    /etc/systemd/system/
 cp "${SCRIPT_DIR}/cklab-scheduler-worker.service" /etc/systemd/system/
 systemctl daemon-reload
 echo "  Unit files installed and daemon reloaded."
 
-# ── 13. Apache virtual host ───────────────────────────────────────────────────
+# ── 14. Apache virtual host ───────────────────────────────────────────────────
 info "Configuring Apache virtual host"
 cat > /etc/apache2/sites-available/cklabscheduler.conf <<APACHECONF
 # cklabScheduler Apache virtual host
@@ -482,7 +574,7 @@ apache2ctl configtest \
 systemctl reload apache2
 echo "  Apache configured for ${SERVER_HOSTNAME}."
 
-# ── 14. Pre-start validation ─────────────────────────────────────────────────
+# ── 15. Pre-start validation ─────────────────────────────────────────────────
 info "Pre-start validation"
 
 [[ -d "${VENV}" ]] \
@@ -511,13 +603,13 @@ echo "  ✓ Database: ${DB_PATH}"
 
 echo "  All pre-start checks passed."
 
-# ── 15. Enable and start services ────────────────────────────────────────────
+# ── 16. Enable and start services ────────────────────────────────────────────
 info "Starting services"
 systemctl enable "${WEB_SVC}" "${WORKER_SVC}"
 systemctl start  "${WEB_SVC}" "${WORKER_SVC}"
 echo "  ${WEB_SVC} and ${WORKER_SVC} enabled and started."
 
-# ── 16. Health check ─────────────────────────────────────────────────────────
+# ── 17. Health check ─────────────────────────────────────────────────────────
 info "Health check"
 echo "  Waiting for services to initialise..."
 sleep 5
@@ -531,6 +623,11 @@ if printf '%s' "${HEALTH_JSON}" | grep -q '"ok": *true'; then
     echo
     echo "  Application URL : https://${SERVER_HOSTNAME}/cklabScheduler/"
     echo "  Health endpoint : https://${SERVER_HOSTNAME}/cklabScheduler/api/health"
+    if [[ "${LOCAL_AUTH_ENABLED_VAL}" == "true" ]]; then
+        echo "  Sign in with the local admin account created during installation."
+    else
+        echo "  Sign in via Microsoft Entra ID (local accounts are disabled)."
+    fi
     echo
     echo "  Log commands:"
     echo "    journalctl -u ${WEB_SVC}    -f"

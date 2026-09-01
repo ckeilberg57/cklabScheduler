@@ -28,10 +28,14 @@ def make_app(test_db):
          patch.object(Settings, "API_PASS", "pass"), \
          patch.object(Settings, "SECRET_KEY", "testsecret"), \
          patch.object(Settings, "O365_ENABLED", False), \
+         patch.object(Settings, "LOCAL_AUTH_ENABLED", True), \
+         patch.object(Settings, "ENTRA_ENABLED", False), \
+         patch.object(Settings, "SESSION_COOKIE_SECURE", False), \
          patch("app.PexipAPI", return_value=MagicMock()):
         from app import create_app
         app = create_app()
         app.config["TESTING"] = True
+        app.config["WTF_CSRF_ENABLED"] = False
         return app
 
 

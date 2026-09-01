@@ -3,3 +3,7 @@ requests==2.32.3
 APScheduler==3.10.4
 python-dotenv==1.0.1
 gunicorn==21.2.0
+# Authentication
+Flask-Login==0.6.3          # Session management and @login_required
+Flask-WTF==1.2.2            # CSRF protection for forms and JSON APIs
+msal==1.29.0                # Microsoft Authentication Library for Entra ID / Azure AD

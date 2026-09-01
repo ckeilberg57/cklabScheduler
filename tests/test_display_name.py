@@ -42,11 +42,30 @@ def make_app(test_db):
          patch.object(Settings, "API_PASS",         "pass"), \
          patch.object(Settings, "SECRET_KEY",       "testsecret"), \
          patch.object(Settings, "O365_ENABLED",     False), \
+         patch.object(Settings, "LOCAL_AUTH_ENABLED", True), \
+         patch.object(Settings, "ENTRA_ENABLED",    False), \
+         patch.object(Settings, "SESSION_COOKIE_SECURE", False), \
          patch("app.PexipAPI", return_value=mock_pexip):
         from app import create_app
         app = create_app()
         app.config["TESTING"] = True
+        app.config["WTF_CSRF_ENABLED"] = False
     return app
+
+
+def _logged_in_client(app, test_db):
+    """Return a test client with a local admin user logged in."""
+    from app.auth.local import hash_password
+    from app.auth.models import create_local_user
+    with patch.object(Settings, "DB_PATH", test_db):
+        try:
+            create_local_user("displaytest", hash_password("TestPassword123!"), role="administrator")
+        except ValueError:
+            pass
+    client = app.test_client()
+    with patch.object(Settings, "DB_PATH", test_db):
+        client.post("/login", data={"username": "displaytest", "password": "TestPassword123!"})
+    return client
 
 
 def _run_add_env_default(env_file_content, key, default):
@@ -122,8 +141,9 @@ def test_control_display_name_independent_of_app_display_name():
 def test_html_title_uses_custom_app_display_name(test_db):
     """<title> tag in index.html reflects a custom APP_DISPLAY_NAME."""
     app = make_app(test_db)
+    client = _logged_in_client(app, test_db)
     with patch.object(Settings, "APP_DISPLAY_NAME", "Acme Scheduler"):
-        with app.test_client() as client:
+        with patch.object(Settings, "DB_PATH", test_db):
             resp = client.get("/")
     html = resp.get_data(as_text=True)
     assert "<title>Acme Scheduler</title>" in html
@@ -132,8 +152,9 @@ def test_html_title_uses_custom_app_display_name(test_db):
 def test_html_branding_h1_uses_custom_app_display_name(test_db):
     """<h1> branding element in index.html reflects a custom APP_DISPLAY_NAME."""
     app = make_app(test_db)
+    client = _logged_in_client(app, test_db)
     with patch.object(Settings, "APP_DISPLAY_NAME", "Acme Scheduler"):
-        with app.test_client() as client:
+        with patch.object(Settings, "DB_PATH", test_db):
             resp = client.get("/")
     html = resp.get_data(as_text=True)
     assert "<h1>Acme Scheduler</h1>" in html
@@ -142,8 +163,9 @@ def test_html_branding_h1_uses_custom_app_display_name(test_db):
 def test_html_title_uses_default_name(test_db):
     """<title> renders 'CKlabs Scheduler' when that is the configured name."""
     app = make_app(test_db)
+    client = _logged_in_client(app, test_db)
     with patch.object(Settings, "APP_DISPLAY_NAME", "CKlabs Scheduler"):
-        with app.test_client() as client:
+        with patch.object(Settings, "DB_PATH", test_db):
             resp = client.get("/")
     html = resp.get_data(as_text=True)
     assert "<title>CKlabs Scheduler</title>" in html
@@ -152,10 +174,11 @@ def test_html_title_uses_default_name(test_db):
 def test_control_display_name_does_not_appear_in_html_title(test_db):
     """CONTROL_DISPLAY_NAME must not appear in <title>; they are independent."""
     app = make_app(test_db)
+    client = _logged_in_client(app, test_db)
     with patch.object(Settings, "APP_DISPLAY_NAME",     "CKlabs Scheduler"), \
-         patch.object(Settings, "CONTROL_DISPLAY_NAME", "Dial-in Bot"):
-        with app.test_client() as client:
-            resp = client.get("/")
+         patch.object(Settings, "CONTROL_DISPLAY_NAME", "Dial-in Bot"), \
+         patch.object(Settings, "DB_PATH", test_db):
+        resp = client.get("/")
     html = resp.get_data(as_text=True)
     title_content = html.split("<title>")[1].split("</title>")[0]
     assert "Dial-in Bot" not in title_content

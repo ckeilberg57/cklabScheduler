@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from flask import Blueprint, current_app, jsonify, request
 
+from app.auth.decorators import login_required
 from app.config import Settings
 from app.database import db
 from app.email_service import send_invites_for_meeting
@@ -23,6 +24,7 @@ meetings_bp = Blueprint("meetings", __name__)
 
 
 @meetings_bp.route("/api/meetings")
+@login_required
 def api_meetings():
     day = request.args.get("date") or now_utc().date().isoformat()
     with closing(db()) as conn:
@@ -36,6 +38,7 @@ def api_meetings():
 
 
 @meetings_bp.route("/api/meetings", methods=["POST"])
+@login_required
 def api_create_meeting():
     payload = request.get_json(force=True, silent=True) or {}
     title = (payload.get("title") or "").strip() or "Whiteglove Support Session"
@@ -120,6 +123,7 @@ def api_create_meeting():
 
 
 @meetings_bp.route("/api/meetings/<int:meeting_id>/extend", methods=["POST"])
+@login_required
 def api_extend_meeting(meeting_id):
     payload = request.get_json(force=True, silent=True) or {}
     minutes = int(payload.get("minutes") or Settings.DEFAULT_EXTEND_MINUTES)
@@ -157,6 +161,7 @@ def api_extend_meeting(meeting_id):
 
 
 @meetings_bp.route("/api/meetings/<int:meeting_id>/delete", methods=["POST"])
+@login_required
 def api_delete_meeting(meeting_id):
     with closing(db()) as conn:
         row = conn.execute("SELECT * FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
@@ -171,6 +176,7 @@ def api_delete_meeting(meeting_id):
 
 
 @meetings_bp.route("/api/meetings/<int:meeting_id>/update", methods=["POST"])
+@login_required
 def api_update_meeting(meeting_id):
     payload = request.get_json(force=True, silent=True) or {}
     endpoints = payload.get("endpoints") or []
@@ -263,6 +269,7 @@ def api_update_meeting(meeting_id):
 
 
 @meetings_bp.route("/api/meetings/<int:meeting_id>/redial_endpoint", methods=["POST"])
+@login_required
 def api_redial_endpoint(meeting_id):
     payload = request.get_json(force=True, silent=True) or {}
     endpoint_alias = (payload.get("endpoint_alias") or "").strip()
@@ -302,6 +309,7 @@ def api_redial_endpoint(meeting_id):
 
 
 @meetings_bp.route("/api/meetings/<int:meeting_id>/invitees/<int:invitee_id>/resend", methods=["POST"])
+@login_required
 def api_resend_invitee(meeting_id, invitee_id):
     from app.email_service import send_invitee_email
 

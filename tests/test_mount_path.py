@@ -47,10 +47,14 @@ def make_app(test_db):
          patch.object(Settings, "API_PASS", "pass"), \
          patch.object(Settings, "SECRET_KEY", "testsecret"), \
          patch.object(Settings, "O365_ENABLED", False), \
+         patch.object(Settings, "LOCAL_AUTH_ENABLED", True), \
+         patch.object(Settings, "ENTRA_ENABLED", False), \
+         patch.object(Settings, "SESSION_COOKIE_SECURE", False), \
          patch("app.PexipAPI", return_value=mock_pexip):
         from app import create_app
         app = create_app()
         app.config["TESTING"] = True
+        app.config["WTF_CSRF_ENABLED"] = False
         return app
 
 
@@ -135,7 +139,7 @@ class TestFlaskRoutingWithScriptName:
         assert data["ok"] is True
 
     def test_meetings_routes_with_script_name(self, test_db):
-        """Meetings endpoint returns 200 with SCRIPT_NAME set."""
+        """Meetings endpoint returns 401 (auth required) with SCRIPT_NAME set — verifies routing."""
         app = make_app(test_db)
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
@@ -143,10 +147,11 @@ class TestFlaskRoutingWithScriptName:
                     "/api/meetings",
                     environ_overrides={"SCRIPT_NAME": SCRIPT_NAME},
                 )
-        assert resp.status_code == 200
+        # 401 confirms Flask routed to the meetings handler, which enforces auth.
+        assert resp.status_code == 401
 
     def test_endpoints_routes_with_script_name(self, test_db):
-        """Endpoints list returns 200 with SCRIPT_NAME set."""
+        """Endpoints list returns 401 (auth required) with SCRIPT_NAME set — verifies routing."""
         app = make_app(test_db)
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
@@ -154,10 +159,10 @@ class TestFlaskRoutingWithScriptName:
                     "/api/endpoints",
                     environ_overrides={"SCRIPT_NAME": SCRIPT_NAME},
                 )
-        assert resp.status_code == 200
+        assert resp.status_code == 401
 
     def test_config_routes_with_script_name(self, test_db):
-        """Config endpoint returns 200 with SCRIPT_NAME set."""
+        """Config endpoint returns 401 (auth required) with SCRIPT_NAME set — verifies routing."""
         app = make_app(test_db)
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
@@ -165,10 +170,10 @@ class TestFlaskRoutingWithScriptName:
                     "/api/config",
                     environ_overrides={"SCRIPT_NAME": SCRIPT_NAME},
                 )
-        assert resp.status_code == 200
+        assert resp.status_code == 401
 
     def test_ui_root_routes_with_script_name(self, test_db):
-        """UI index returns 200 with SCRIPT_NAME set."""
+        """UI index redirects to login with SCRIPT_NAME set — verifies routing."""
         app = make_app(test_db)
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
@@ -176,7 +181,8 @@ class TestFlaskRoutingWithScriptName:
                     "/",
                     environ_overrides={"SCRIPT_NAME": SCRIPT_NAME},
                 )
-        assert resp.status_code == 200
+        # 302 confirms Flask routed to the UI handler, which enforces auth.
+        assert resp.status_code == 302
 
 
 # ── SCRIPT_NAME propagation to template and url_for ──────────────────────────
@@ -194,10 +200,18 @@ class TestScriptNamePropagation:
         When SCRIPT_NAME=/cklabScheduler, this must render as:
             window.APP_ROOT = "/cklabScheduler";
         ensuring all frontend API calls use the correct prefix.
+        Requires an authenticated session to render the main page.
         """
+        from app.auth.local import hash_password
+        from app.auth.models import create_local_user
+        with patch.object(Settings, "DB_PATH", test_db):
+            create_local_user("scriptuser", hash_password("TestPassword123!"), role="scheduler_user")
         app = make_app(test_db)
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
+                # Log in first (no SCRIPT_NAME needed for login itself)
+                client.post("/login", data={"username": "scriptuser", "password": "TestPassword123!"})
+                # Now request the main page with SCRIPT_NAME
                 resp = client.get(
                     "/",
                     environ_overrides={"SCRIPT_NAME": SCRIPT_NAME},

@@ -10,7 +10,9 @@ def test_validate_web_reports_all_missing():
          patch.object(Settings, "API_USER", ""), \
          patch.object(Settings, "API_PASS", ""), \
          patch.object(Settings, "SECRET_KEY", ""), \
-         patch.object(Settings, "O365_ENABLED", False):
+         patch.object(Settings, "O365_ENABLED", False), \
+         patch.object(Settings, "LOCAL_AUTH_ENABLED", True), \
+         patch.object(Settings, "ENTRA_ENABLED", False):
         with pytest.raises(RuntimeError) as exc_info:
             Settings.validate_web()
         msg = str(exc_info.value)
@@ -27,7 +29,9 @@ def test_validate_web_succeeds_when_all_set():
          patch.object(Settings, "API_USER", "user"), \
          patch.object(Settings, "API_PASS", "pass"), \
          patch.object(Settings, "SECRET_KEY", "supersecret"), \
-         patch.object(Settings, "O365_ENABLED", False):
+         patch.object(Settings, "O365_ENABLED", False), \
+         patch.object(Settings, "LOCAL_AUTH_ENABLED", True), \
+         patch.object(Settings, "ENTRA_ENABLED", False):
         Settings.validate_web()
 
 
@@ -41,7 +45,9 @@ def test_validate_web_o365_requires_extra_vars_when_enabled():
          patch.object(Settings, "O365_TENANT_ID", ""), \
          patch.object(Settings, "O365_CLIENT_ID", ""), \
          patch.object(Settings, "O365_CLIENT_SECRET", ""), \
-         patch.object(Settings, "O365_FROM_MAILBOX", ""):
+         patch.object(Settings, "O365_FROM_MAILBOX", ""), \
+         patch.object(Settings, "LOCAL_AUTH_ENABLED", True), \
+         patch.object(Settings, "ENTRA_ENABLED", False):
         with pytest.raises(RuntimeError) as exc_info:
             Settings.validate_web()
         msg = str(exc_info.value)
@@ -59,7 +65,9 @@ def test_validate_web_o365_not_required_when_disabled():
          patch.object(Settings, "SECRET_KEY", "supersecret"), \
          patch.object(Settings, "O365_ENABLED", False), \
          patch.object(Settings, "O365_TENANT_ID", ""), \
-         patch.object(Settings, "O365_CLIENT_ID", ""):
+         patch.object(Settings, "O365_CLIENT_ID", ""), \
+         patch.object(Settings, "LOCAL_AUTH_ENABLED", True), \
+         patch.object(Settings, "ENTRA_ENABLED", False):
         Settings.validate_web()
 
 

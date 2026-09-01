@@ -1,11 +1,13 @@
 from flask import Blueprint, current_app, jsonify
 
+from app.auth.decorators import login_required
 from app.config import Settings
 
 endpoints_bp = Blueprint("endpoints", __name__)
 
 
 @endpoints_bp.route("/api/endpoints")
+@login_required
 def api_endpoints():
     try:
         return jsonify({"ok": True, "items": current_app.pexip.list_registered_endpoints()})
@@ -14,6 +16,7 @@ def api_endpoints():
 
 
 @endpoints_bp.route("/api/config")
+@login_required
 def api_config():
     effective_webrtc = (
         Settings.WEBRTC_BASE_URL or f"https://{Settings.COMMAND_HOST}/webapp3/m/"

@@ -48,11 +48,27 @@ def make_app(test_db):
          patch.object(Settings, "API_PASS",         "pass"), \
          patch.object(Settings, "SECRET_KEY",       "testsecret"), \
          patch.object(Settings, "O365_ENABLED",     False), \
+         patch.object(Settings, "LOCAL_AUTH_ENABLED", True), \
+         patch.object(Settings, "ENTRA_ENABLED",    False), \
+         patch.object(Settings, "SESSION_COOKIE_SECURE", False), \
          patch("app.PexipAPI", return_value=mock_pexip):
         from app import create_app
         app = create_app()
         app.config["TESTING"] = True
+        app.config["WTF_CSRF_ENABLED"] = False
         return app, mock_pexip
+
+
+def _login_admin(client, test_db):
+    """Create and log in an admin user, returning the client."""
+    from app.auth.local import hash_password
+    from app.auth.models import create_local_user
+    with patch.object(Settings, "DB_PATH", test_db):
+        try:
+            create_local_user("eptest_admin", hash_password("TestPassword123!"), role="administrator")
+        except Exception:
+            pass
+        client.post("/login", data={"username": "eptest_admin", "password": "TestPassword123!"})
 
 
 # ── Unit tests for list_registered_endpoints ──────────────────────────────────
@@ -167,7 +183,9 @@ class TestEndpointsApiRoute:
              "is_registered": True, "protocol": "sip", "node": ""},
         ]
         with app.test_client() as client:
-            resp = client.get("/api/endpoints")
+            _login_admin(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                resp = client.get("/api/endpoints")
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["ok"] is True
@@ -183,7 +201,9 @@ class TestEndpointsApiRoute:
             {"alias": "c@example.com", "display_name": "C", "is_registered": True, "protocol": "", "node": ""},
         ]
         with app.test_client() as client:
-            resp = client.get("/api/endpoints")
+            _login_admin(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                resp = client.get("/api/endpoints")
         data = resp.get_json()
         assert data["ok"] is True
         assert len(data["items"]) == 3
@@ -193,7 +213,9 @@ class TestEndpointsApiRoute:
         app, mock_pexip = make_app(test_db)
         mock_pexip.list_registered_endpoints.return_value = []
         with app.test_client() as client:
-            resp = client.get("/api/endpoints")
+            _login_admin(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                resp = client.get("/api/endpoints")
         data = resp.get_json()
         assert resp.status_code == 200
         assert data["ok"] is True
@@ -204,7 +226,9 @@ class TestEndpointsApiRoute:
         app, mock_pexip = make_app(test_db)
         mock_pexip.list_registered_endpoints.side_effect = Exception("Connection refused")
         with app.test_client() as client:
-            resp = client.get("/api/endpoints")
+            _login_admin(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                resp = client.get("/api/endpoints")
         data = resp.get_json()
         assert resp.status_code == 500
         assert data["ok"] is False
@@ -220,7 +244,9 @@ class TestEndpointsApiRoute:
              "is_registered": True, "protocol": "", "node": ""},
         ]
         with app.test_client() as client:
-            resp = client.get("/api/endpoints")
+            _login_admin(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                resp = client.get("/api/endpoints")
         data = resp.get_json()
         aliases = [ep["alias"] for ep in data["items"]]
         assert "stale-device@example.com" not in aliases
@@ -233,7 +259,9 @@ class TestEndpointsApiRoute:
              "is_registered": True, "protocol": "", "node": ""},
         ]
         with app.test_client() as client:
-            resp = client.get("/api/endpoints")
+            _login_admin(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                resp = client.get("/api/endpoints")
         data = resp.get_json()
         aliases = [ep["alias"] for ep in data["items"]]
         assert "stale-device@example.com" in aliases

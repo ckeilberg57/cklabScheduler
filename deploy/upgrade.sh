@@ -160,7 +160,21 @@ _add_env_default() {
         echo "  ${key} not found — added default: ${default}"
     fi
 }
-_add_env_default "APP_DISPLAY_NAME" "CKlabs Scheduler"
+_add_env_default "APP_DISPLAY_NAME"    "CKlabs Scheduler"
+_add_env_default "LOCAL_AUTH_ENABLED"  "true"
+_add_env_default "ENTRA_ENABLED"       "false"
+_add_env_default "SESSION_COOKIE_SECURE" "true"
+
+# If this is the first upgrade that adds authentication, remind the operator
+# to create a local admin user before trying to log in.
+if ! grep -q "^LOCAL_AUTH_ENABLED=" "${ENV_FILE}.bak."* 2>/dev/null; then
+    echo
+    echo "  NOTE: Authentication has been added in this release."
+    echo "  If you have not already created an admin user, run:"
+    echo "    sudo ${APP_DIR}/venv/bin/python -m app.manage_users create \\"
+    echo "         --username <admin> --role administrator"
+    echo "  (you will be prompted for the password)"
+fi
 
 # ── 11. Start both services ───────────────────────────────────────────────────
 info "Starting services"

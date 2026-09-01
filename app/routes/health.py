@@ -14,6 +14,11 @@ HEARTBEAT_STALE_SECONDS = 30
 
 @health_bp.route("/api/health")
 def api_health():
+    """
+    Public health endpoint for infrastructure monitoring.
+    Does not require authentication.
+    Does not expose credentials, hostnames, tenant IDs, or tokens.
+    """
     overall_ok = True
     response = {
         "service": "cklabScheduler",
@@ -79,6 +84,13 @@ def api_health():
     if not scheduler_ok:
         overall_ok = False
     response["scheduler_worker"] = scheduler_info
+
+    # Report which auth methods are configured — no credentials or IDs exposed.
+    response["authentication"] = {
+        "local_enabled": Settings.LOCAL_AUTH_ENABLED,
+        "entra_enabled": Settings.is_entra_auth_enabled(),
+    }
+
     response["ok"] = overall_ok
 
     return jsonify(response), (200 if overall_ok else 500)

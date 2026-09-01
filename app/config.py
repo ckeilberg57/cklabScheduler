@@ -46,6 +46,30 @@ class Settings:
     O365_LOCATION = os.getenv("O365_LOCATION", "Secure Virtual Session")
     O365_ALLOW_PROPOSE_NEW_TIME = os.getenv("O365_ALLOW_PROPOSE_NEW_TIME", "false").lower() == "true"
 
+    # ── Authentication ─────────────────────────────────────────────────────────
+    # Local administrator authentication (always available by default).
+    LOCAL_AUTH_ENABLED = os.getenv("LOCAL_AUTH_ENABLED", "true").lower() == "true"
+
+    # Microsoft Entra ID / Azure AD authentication (optional).
+    ENTRA_ENABLED = os.getenv("ENTRA_ENABLED", "false").lower() == "true"
+    ENTRA_TENANT_ID = os.getenv("ENTRA_TENANT_ID", "")
+    ENTRA_CLIENT_ID = os.getenv("ENTRA_CLIENT_ID", "")
+    ENTRA_CLIENT_SECRET = os.getenv("ENTRA_CLIENT_SECRET", "")
+    # Authority URL — defaults to public cloud single-tenant if left blank.
+    ENTRA_AUTHORITY = os.getenv("ENTRA_AUTHORITY", "")
+    ENTRA_REDIRECT_URI = os.getenv("ENTRA_REDIRECT_URI", "")
+    ENTRA_POST_LOGOUT_REDIRECT_URI = os.getenv("ENTRA_POST_LOGOUT_REDIRECT_URI", "")
+    ENTRA_REQUIRED_ADMIN_ROLE = os.getenv("ENTRA_REQUIRED_ADMIN_ROLE", "Scheduler.Administrator")
+    ENTRA_REQUIRED_USER_ROLE = os.getenv("ENTRA_REQUIRED_USER_ROLE", "Scheduler.User")
+
+    # Session cookie security (set false only for local HTTP development).
+    SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true").lower() == "true"
+
+    @classmethod
+    def is_entra_auth_enabled(cls):
+        """Return True only when Entra is both configured and enabled."""
+        return cls.ENTRA_ENABLED and bool(cls.ENTRA_TENANT_ID) and bool(cls.ENTRA_CLIENT_ID)
+
     @classmethod
     def validate_web(cls):
         missing = []
@@ -58,6 +82,7 @@ class Settings:
         ]:
             if not value:
                 missing.append(name)
+
         if cls.O365_ENABLED:
             for name, value in [
                 ("O365_TENANT_ID", cls.O365_TENANT_ID),
@@ -67,6 +92,23 @@ class Settings:
             ]:
                 if not value:
                     missing.append(name)
+
+        # Bootstrap protection: at least one auth method must be enabled.
+        if not cls.LOCAL_AUTH_ENABLED and not cls.ENTRA_ENABLED:
+            raise RuntimeError(
+                "Authentication misconfiguration: both LOCAL_AUTH_ENABLED and "
+                "ENTRA_ENABLED are false. At least one must be enabled."
+            )
+
+        if cls.ENTRA_ENABLED:
+            for name, value in [
+                ("ENTRA_TENANT_ID", cls.ENTRA_TENANT_ID),
+                ("ENTRA_CLIENT_ID", cls.ENTRA_CLIENT_ID),
+                ("ENTRA_CLIENT_SECRET", cls.ENTRA_CLIENT_SECRET),
+            ]:
+                if not value:
+                    missing.append(name)
+
         if missing:
             raise RuntimeError(
                 f"Missing required configuration variables: {', '.join(missing)}"
