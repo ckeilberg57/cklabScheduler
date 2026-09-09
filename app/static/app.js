@@ -944,6 +944,22 @@ function setDefaultTimes() {
   $('#endTime').value = toLocalInputValue(later);
 }
 
+function refreshSchedulingAvailability() {
+  const now = new Date();
+  const startInput = $('#startTime');
+  const currentStart = startInput?.value ? new Date(startInput.value) : null;
+
+  // If the start time is missing, unparseable, or already in the past, recalculate
+  // from the current time so the picker never reflects a stale page-load "now".
+  if (!currentStart || Number.isNaN(currentStart.getTime()) || currentStart <= now) {
+    setDefaultTimes();
+  }
+
+  // Re-render endpoints using the (potentially updated) time window so that
+  // FREE/BUSY status reflects the refreshed endpoint list and current time.
+  renderEndpoints();
+}
+
 function setToday() {
   const today = new Date();
   $('#dayPicker').value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -1182,6 +1198,7 @@ async function init() {
   $('#refreshEndpoints').onclick = async () => {
     try {
       await loadEndpoints();
+      refreshSchedulingAvailability();
       showToast('Endpoints refreshed.');
     } catch (err) {
       showErrorToast(err);
@@ -1245,6 +1262,7 @@ async function init() {
   setInterval(async () => {
     try {
       await loadEndpoints();
+      refreshSchedulingAvailability();
     } catch (err) {
       console.error(err);
     }
