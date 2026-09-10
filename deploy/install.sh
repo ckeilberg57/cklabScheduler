@@ -330,7 +330,7 @@ done
 
 if [[ "${TLS_OPTION}" == "1" ]]; then
     while true; do
-        USER_CERT="$(prompt_required "Path to certificate file (.crt or .pem)")"
+        USER_CERT="$(prompt_required "Path to certificate file (.crt or .pem; full-chain / fullchain.pem accepted)")"
         USER_KEY="$(prompt_required  "Path to private key file")"
         if [[ -f "${USER_CERT}" && -f "${USER_KEY}" ]]; then
             break
@@ -341,17 +341,36 @@ if [[ "${TLS_OPTION}" == "1" ]]; then
     cp "${USER_KEY}"  "${KEY_FILE}"
     chmod 644 "${CERT_FILE}"
     chmod 600 "${KEY_FILE}"
-    echo "  Certificate installed from provided paths."
+
+    # Validate certificate is parseable PEM.
+    openssl x509 -in "${CERT_FILE}" -noout \
+        || die "Provided certificate is not a valid PEM certificate: ${USER_CERT}"
+
+    # Validate private key is parseable PEM (works for RSA and EC keys).
+    openssl pkey -in "${KEY_FILE}" -noout \
+        || die "Provided private key is not a valid PEM key: ${USER_KEY}"
+
+    # Verify certificate and private key match by comparing public-key fingerprints.
+    _CERT_PUB="$(openssl x509 -in "${CERT_FILE}" -pubkey -noout | \
+                 openssl pkey -pubin -outform der | \
+                 sha256sum | cut -d' ' -f1)"
+    _KEY_PUB="$(openssl pkey -in "${KEY_FILE}" -pubout -outform der | \
+                sha256sum | cut -d' ' -f1)"
+    [[ "${_CERT_PUB}" == "${_KEY_PUB}" ]] \
+        || die "Certificate and private key do not match — check that you supplied the correct pair."
+    unset _CERT_PUB _KEY_PUB
+
+    echo "  Certificate installed and validated from provided paths."
 else
     echo "  Generating self-signed certificate (4096-bit RSA, 10 years)..."
     openssl req -x509 -newkey rsa:4096 -days 3650 -nodes \
         -subj "/CN=${SERVER_HOSTNAME}" \
+        -addext "subjectAltName=DNS:${SERVER_HOSTNAME}" \
         -keyout "${KEY_FILE}" \
-        -out    "${CERT_FILE}" \
-        2>/dev/null
+        -out    "${CERT_FILE}"
     chmod 644 "${CERT_FILE}"
     chmod 600 "${KEY_FILE}"
-    echo "  Self-signed certificate generated."
+    echo "  Self-signed certificate generated (CN and SAN: ${SERVER_HOSTNAME})."
 fi
 
 echo
