@@ -157,14 +157,24 @@ class TestNoLabSpecificHostnames:
     None of those are the specific lab hostnames we're testing against.
     """
 
+    # Relative path of this file — excluded from the scan so that the
+    # assertion strings inside our own test code don't trip the check.
+    _SELF = pathlib.Path("tests/test_branding.py")
+
     def _tracked_text(self):
-        """Return concatenated text of all tracked non-binary source files."""
+        """Return concatenated text of all tracked non-binary source files.
+
+        Excludes tests/test_branding.py itself so that the forbidden-hostname
+        strings in our own assertions don't cause a false failure.
+        """
         result = subprocess.run(
             ["git", "ls-files"],
             capture_output=True, text=True, cwd=REPO
         )
         texts = []
         for path in result.stdout.splitlines():
+            if pathlib.Path(path) == self._SELF:
+                continue
             full = REPO / path
             if full.suffix in (".gz", ".zip", ".db", ".sqlite", ".png",
                                ".jpg", ".ico", ".woff", ".woff2"):
@@ -174,6 +184,16 @@ class TestNoLabSpecificHostnames:
             except (OSError, IsADirectoryError):
                 pass
         return "\n".join(texts)
+
+    def test_self_exclusion_preserves_other_test_files(self):
+        """_tracked_text() excludes only test_branding.py; other test files are still scanned."""
+        combined = self._tracked_text()
+        # test_auth.py is a known tracked test file — its content should be present
+        assert "Authentication and authorization tests" in combined, \
+            "_tracked_text() must still include other tracked test files (e.g. test_auth.py)"
+        # test_branding.py itself must NOT be in the scan
+        assert "self_exclusion_preserves_other_test_files" not in combined, \
+            "_tracked_text() must exclude tests/test_branding.py"
 
     def test_no_ck_collab_engtest_in_source(self):
         """ck-collab-engtest.com must not appear in any tracked source file."""
