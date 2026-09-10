@@ -212,3 +212,53 @@ class TestNoLabSpecificHostnames:
         combined = self._tracked_text()
         assert "cklab-edges" not in combined, \
             "Found 'cklab-edges' in tracked source — remove lab-specific Pexip hostnames"
+
+
+# ── Documentation product-branding regression ─────────────────────────────────
+
+class TestDocumentationBranding:
+    """
+    Verify that user-facing documentation does not contain CKLab/CKLabs product
+    branding.  Acceptable retained occurrences are:
+      - Runtime filesystem paths (/opt/cklabScheduler, /etc/cklabScheduler, etc.)
+      - Systemd unit names (cklab-scheduler-*)
+      - Service account (cklabscheduler)
+      - Apache config filename (cklabscheduler.conf)
+      - URL mount path (/cklabScheduler/)
+      - GitHub repository name/URL references
+      - Branding test guard strings (tests/test_branding.py is excluded from the scan)
+    The scan rejects the specific product-name phrases 'CKLab Scheduler' and
+    'CKLabs Scheduler' appearing as user-visible text.
+    """
+
+    _SELF = pathlib.Path("tests/test_branding.py")
+
+    def _doc_text(self):
+        """Return concatenated text of documentation and script files, excluding this file."""
+        result = subprocess.run(
+            ["git", "ls-files", "--", "*.md", "*.txt", "*.rst", "*.example",
+             "*.sh", "*.py", "*.service", "*.conf"],
+            capture_output=True, text=True, cwd=REPO
+        )
+        texts = []
+        for path in result.stdout.splitlines():
+            if pathlib.Path(path) == self._SELF:
+                continue
+            full = REPO / path
+            try:
+                texts.append(full.read_text(encoding="utf-8", errors="replace"))
+            except (OSError, IsADirectoryError):
+                pass
+        return "\n".join(texts)
+
+    def test_no_cklab_scheduler_product_name_in_docs(self):
+        """'CKLab Scheduler' must not appear as a product name in any tracked doc or script."""
+        combined = self._doc_text()
+        assert "CKLab Scheduler" not in combined, \
+            "Found 'CKLab Scheduler' product branding in docs — replace with 'SBALKC Scheduler'"
+
+    def test_no_cklabs_scheduler_product_name_in_docs(self):
+        """'CKLabs Scheduler' must not appear as a product name in any tracked doc or script."""
+        combined = self._doc_text()
+        assert "CKLabs Scheduler" not in combined, \
+            "Found 'CKLabs Scheduler' product branding in docs — replace with 'SBALKC Scheduler'"

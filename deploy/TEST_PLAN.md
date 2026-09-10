@@ -2,7 +2,7 @@
 
 ## Overview
 
-This plan validates a complete cklabScheduler deployment on a blank Ubuntu 24.04
+This plan validates a complete SBALKC Scheduler deployment on a blank Ubuntu 24.04
 server. Follow each phase in order. Every section lists exact commands, expected
 output, and a pass/fail criterion.
 

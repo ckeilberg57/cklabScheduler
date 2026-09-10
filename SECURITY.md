@@ -1,12 +1,12 @@
 # Security
 
-This document describes the security model for cklabScheduler and guidance for operators deploying it.
+This document describes the security model for SBALKC Scheduler and guidance for operators deploying it.
 
 ---
 
 ## Authentication
 
-cklabScheduler supports two authentication methods, independently enabled:
+SBALKC Scheduler supports two authentication methods, independently enabled:
 
 | Method | Description |
 |---|---|

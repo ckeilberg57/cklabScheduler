@@ -1,4 +1,4 @@
-# cklabScheduler
+# SBALKC Scheduler
 
 A production-grade Pexip meeting scheduler built on Flask and APScheduler. It lets operators book meetings with registered Pexip endpoints, automatically dials those endpoints at the scheduled start time, and disconnects them at the scheduled end time.
 
@@ -111,7 +111,7 @@ Gunicorn spawns multiple worker processes. If APScheduler ran inside Gunicorn, e
 
 ## Authentication
 
-cklabScheduler requires authentication to access all routes except `/api/health`. Two independent methods are supported:
+SBALKC Scheduler requires authentication to access all routes except `/api/health`. Two independent methods are supported:
 
 ### Local admin accounts (default)
 
@@ -141,9 +141,9 @@ sudo /opt/cklabScheduler/venv/bin/python -m app.manage_users change-role \
 
 ### Microsoft Entra ID (Azure AD)
 
-Optional. Uses OIDC Authorization Code Flow (MSAL). Role assignments in Entra map to cklabScheduler roles:
+Optional. Uses OIDC Authorization Code Flow (MSAL). Role assignments in Entra map to SBALKC Scheduler roles:
 
-| Entra app role | cklabScheduler role |
+| Entra app role | SBALKC Scheduler role |
 |---|---|
 | `Scheduler.Administrator` | `administrator` |
 | `Scheduler.User` | `scheduler_user` |
@@ -209,11 +209,11 @@ Requires root on Ubuntu 24.04. The installer is interactive.
 
 ```bash
 # 1. Copy the release archive to the server and extract
-mkdir -p /root/cklabScheduler-src
-tar -xzf cklabScheduler-test-r4.tar.gz -C /root/cklabScheduler-src --strip-components=1
+mkdir -p /root/sbalkcScheduler-src
+tar -xzf sbalkcScheduler-r8.tar.gz -C /root/sbalkcScheduler-src --strip-components=1
 
 # 2. Run the installer
-cd /root/cklabScheduler-src
+cd /root/sbalkcScheduler-src
 bash deploy/install.sh
 
 # 3. Verify
@@ -243,9 +243,9 @@ From an existing installation:
 
 ```bash
 # Extract new source alongside existing install
-mkdir -p /root/cklabScheduler-new
-tar -xzf cklabScheduler-test-r4.tar.gz -C /root/cklabScheduler-new --strip-components=1
-cd /root/cklabScheduler-new
+mkdir -p /root/sbalkcScheduler-new
+tar -xzf sbalkcScheduler-r8.tar.gz -C /root/sbalkcScheduler-new --strip-components=1
+cd /root/sbalkcScheduler-new
 bash deploy/upgrade.sh
 ```
 
@@ -297,7 +297,7 @@ Tests live in the repository under `tests/` and are **not** deployed to the serv
 
 ```bash
 # On the Ubuntu server after installation
-cd /root/cklabScheduler-src
+cd /root/sbalkcScheduler-src
 /opt/cklabScheduler/venv/bin/python -m pytest tests/ -v
 ```
 

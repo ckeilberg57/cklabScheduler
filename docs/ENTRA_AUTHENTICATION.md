@@ -1,14 +1,14 @@
 # Microsoft Entra ID Authentication
 
-This guide walks an Azure administrator through registering cklabScheduler as an app in Microsoft Entra ID (Azure Active Directory) and enabling OIDC/OAuth2 single-sign-on.
+This guide walks an Azure administrator through registering SBALKC Scheduler as an app in Microsoft Entra ID (Azure Active Directory) and enabling OIDC/OAuth2 single-sign-on.
 
 ---
 
 ## Prerequisites
 
 - An Azure tenant where you have **Application Administrator** (or Global Administrator) privileges
-- The public URL where cklabScheduler is accessible (e.g. `https://scheduler.example.com/cklabScheduler`)
-- cklabScheduler installed and accessible via HTTPS — the redirect URI must be reachable from Entra
+- The public URL where SBALKC Scheduler is accessible (e.g. `https://scheduler.example.com/cklabScheduler`)
+- SBALKC Scheduler installed and accessible via HTTPS — the redirect URI must be reachable from Entra
 
 ---
 
@@ -17,7 +17,7 @@ This guide walks an Azure administrator through registering cklabScheduler as an
 1. Go to the [Azure portal](https://portal.azure.com) and navigate to **Azure Active Directory → App registrations**.
 2. Click **New registration**.
 3. Set:
-   - **Name**: `cklabScheduler` (or any name meaningful to your organisation)
+   - **Name**: `SBALKC Scheduler` (or any name meaningful to your organisation)
    - **Supported account types**: **Accounts in this organizational directory only** (single-tenant)
    - **Redirect URI**: leave blank for now — you will add it in Step 2
 4. Click **Register**.
@@ -40,7 +40,7 @@ This guide walks an Azure administrator through registering cklabScheduler as an
 ## Step 3 — Create a client secret
 
 1. Go to **Certificates & secrets → Client secrets → New client secret**.
-2. Set a description (e.g. `cklabScheduler production`) and an expiry period.
+2. Set a description (e.g. `SBALKC Scheduler production`) and an expiry period.
 3. Click **Add**.
 4. Copy the secret **Value** immediately — it is not shown again after you leave the page.
 
@@ -50,7 +50,7 @@ This guide walks an Azure administrator through registering cklabScheduler as an
 
 ## Step 4 — Define app roles
 
-cklabScheduler uses Entra app roles to assign permissions. You must create two roles:
+SBALKC Scheduler uses Entra app roles to assign permissions. You must create two roles:
 
 1. Go to **App roles → Create app role**.
 
@@ -58,14 +58,14 @@ cklabScheduler uses Entra app roles to assign permissions. You must create two r
    - Display name: `Scheduler Administrator`
    - Allowed member types: **Users/Groups**
    - Value: `Scheduler.Administrator`
-   - Description: `Full access to cklabScheduler, including managing meetings and settings.`
+   - Description: `Full access to SBALKC Scheduler, including managing meetings and settings.`
    - Click **Apply**.
 
    **Role 2 — User:**
    - Display name: `Scheduler User`
    - Allowed member types: **Users/Groups**
    - Value: `Scheduler.User`
-   - Description: `Standard access to create and manage meetings in cklabScheduler.`
+   - Description: `Standard access to create and manage meetings in SBALKC Scheduler.`
    - Click **Apply**.
 
 ---
@@ -131,7 +131,7 @@ systemctl restart cklab-scheduler-web
 
 ## Role mapping
 
-| Entra app role claim | cklabScheduler role |
+| Entra app role claim | SBALKC Scheduler role |
 |---|---|
 | `Scheduler.Administrator` | `administrator` — full access |
 | `Scheduler.User` | `scheduler_user` — standard access |
@@ -145,9 +145,9 @@ Users without any matching role assignment receive a 403 Access Denied response 
 
 1. User visits the application and clicks **Sign in with Microsoft**.
 2. The browser is redirected to `https://login.microsoftonline.com/<tenant>/oauth2/v2.0/authorize`.
-3. User authenticates with their Microsoft credentials (MFA is enforced by Entra, not by cklabScheduler).
+3. User authenticates with their Microsoft credentials (MFA is enforced by Entra, not by SBALKC Scheduler).
 4. Entra redirects back to `/auth/callback` with an authorization code.
-5. cklabScheduler exchanges the code for an ID token and extracts the user's role from the `roles` claim.
+5. SBALKC Scheduler exchanges the code for an ID token and extracts the user's role from the `roles` claim.
 6. A session is created; the user is redirected to the application.
 
 ---
@@ -171,11 +171,11 @@ Users without any matching role assignment receive a 403 Access Denied response 
 
 ## Security notes
 
-- cklabScheduler uses the **Authorization Code Flow** — it never handles Microsoft usernames or passwords.
+- SBALKC Scheduler uses the **Authorization Code Flow** — it never handles Microsoft usernames or passwords.
 - MFA is enforced by Entra (or Conditional Access), not by this application.
 - ID tokens and access tokens are never logged. Only the user's display name, email, and role are stored in the SQLite user record.
 - The client secret is stored in the env file with `640 root:cklabscheduler` permissions.
-- cklabScheduler is registered as a **single-tenant** application. Users from other directories cannot sign in.
+- SBALKC Scheduler is registered as a **single-tenant** application. Users from other directories cannot sign in.
 
 ---
 

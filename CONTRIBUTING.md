@@ -1,6 +1,6 @@
 # Contributing
 
-This document covers the local development setup and contribution expectations for the cklabScheduler project.
+This document covers the local development setup and contribution expectations for the SBALKC Scheduler project.
 
 ---
 

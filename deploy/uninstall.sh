@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deploy/uninstall.sh — Interactive uninstaller for cklabScheduler
+# deploy/uninstall.sh — Interactive uninstaller for SBALKC Scheduler
 # Asks separately before removing code, configuration, data, or the service
 # account.  Defaults to preserving configuration and database data.
 set -euo pipefail
@@ -31,9 +31,9 @@ kept=()
 [[ "${EUID}" -eq 0 ]] || die "This script must be run as root."
 
 # ── 1. Confirm ───────────────────────────────────────────────────────────────
-info "cklabScheduler Uninstaller"
+info "SBALKC Scheduler Uninstaller"
 echo
-echo "  This will stop and remove cklabScheduler services."
+echo "  This will stop and remove SBALKC Scheduler services."
 echo "  You will be asked separately about code, configuration,"
 echo "  database data, and the service account."
 echo

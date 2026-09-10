@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deploy/upgrade.sh — Non-interactive upgrade script for cklabScheduler
+# deploy/upgrade.sh — Non-interactive upgrade script for SBALKC Scheduler
 # Stops both services, replaces application code and dependencies, runs schema
 # migrations, then restarts.  Configuration and the database are preserved.
 set -euo pipefail

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deploy/verify_install.sh — Read-only post-install verification for cklabScheduler
+# deploy/verify_install.sh — Read-only post-install verification for SBALKC Scheduler
 #
 # Inspects files, permissions, services, ports, Apache, health endpoint, and SQLite.
 # DOES NOT modify any configuration, create/delete meetings, or change service state.
@@ -53,7 +53,7 @@ stat_owner() { stat -c '%U:%G' "$1" 2>/dev/null; }
 
 # ── Root check ───────────────────────────────────────────────────────────────
 printf '\n\033[1m══════════════════════════════════════════════════════════\033[0m\n'
-printf '\033[1m  cklabScheduler — Installation Verification\033[0m\n'
+printf '\033[1m  SBALKC Scheduler — Installation Verification\033[0m\n'
 printf '\033[1m══════════════════════════════════════════════════════════\033[0m\n'
 
 if [[ "${EUID}" -ne 0 ]]; then
