@@ -1,8 +1,11 @@
+import secrets
 from contextlib import closing
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+_MOCK_CONTROL_TOKEN = secrets.token_urlsafe(16)
 
 from app.config import Settings
 from app.database import db
@@ -28,7 +31,7 @@ class TestAtomicClaims:
                 insert_endpoint(conn, mid)
 
             mock_pexip = MagicMock()
-            mock_pexip.request_control_token.return_value = "tok"
+            mock_pexip.request_control_token.return_value = _MOCK_CONTROL_TOKEN
             mock_pexip.start_conference.return_value = {}
             mock_pexip.dial_endpoint_to_meeting.return_value = {"result": "ok"}
 
@@ -78,7 +81,7 @@ class TestAtomicClaims:
                 insert_endpoint(conn, mid, status="dialed")
 
             mock_pexip = MagicMock()
-            mock_pexip.request_control_token.return_value = "tok"
+            mock_pexip.request_control_token.return_value = _MOCK_CONTROL_TOKEN
             mock_pexip.disconnect_conference.return_value = {}
 
             with patch("app.scheduler_jobs._pexip", mock_pexip):
@@ -105,7 +108,7 @@ class TestAtomicClaims:
                 )
 
             mock_pexip = MagicMock()
-            mock_pexip.request_control_token.return_value = "tok"
+            mock_pexip.request_control_token.return_value = _MOCK_CONTROL_TOKEN
             mock_pexip.disconnect_conference.side_effect = RuntimeError("disconnect failed")
 
             with patch("app.scheduler_jobs._pexip", mock_pexip):
@@ -190,7 +193,7 @@ class TestRecoverStuckStarting:
                 insert_endpoint(conn, mid, status="scheduled")
 
             mock_pexip = MagicMock()
-            mock_pexip.request_control_token.return_value = "tok"
+            mock_pexip.request_control_token.return_value = _MOCK_CONTROL_TOKEN
             mock_pexip.get_live_participants.return_value = []
             mock_pexip.dial_endpoint_to_meeting.return_value = {"result": "ok"}
 
@@ -221,7 +224,7 @@ class TestRecoverStuckStarting:
                 insert_endpoint(conn, mid, endpoint_alias="ep@example.com", status="scheduled")
 
             mock_pexip = MagicMock()
-            mock_pexip.request_control_token.return_value = "tok"
+            mock_pexip.request_control_token.return_value = _MOCK_CONTROL_TOKEN
             mock_pexip.get_live_participants.return_value = [
                 {"remote_alias": "ep@example.com", "display_name": "Test Endpoint"}
             ]
@@ -254,7 +257,7 @@ class TestRecoverStuckStarting:
                 )
 
             mock_pexip = MagicMock()
-            mock_pexip.request_control_token.return_value = "tok"
+            mock_pexip.request_control_token.return_value = _MOCK_CONTROL_TOKEN
             mock_pexip.get_live_participants.return_value = []
 
             with patch("app.scheduler_jobs._pexip", mock_pexip):
@@ -324,7 +327,7 @@ class TestRecoverStuckEnding:
                 )
 
             mock_pexip = MagicMock()
-            mock_pexip.request_control_token.return_value = "tok"
+            mock_pexip.request_control_token.return_value = _MOCK_CONTROL_TOKEN
             mock_pexip.disconnect_conference.return_value = {}
 
             with patch("app.scheduler_jobs._pexip", mock_pexip):
@@ -349,7 +352,7 @@ class TestRecoverStuckEnding:
                 )
 
             mock_pexip = MagicMock()
-            mock_pexip.request_control_token.return_value = "tok"
+            mock_pexip.request_control_token.return_value = _MOCK_CONTROL_TOKEN
             mock_pexip.disconnect_conference.side_effect = RuntimeError("gone")
 
             with patch("app.scheduler_jobs._pexip", mock_pexip):

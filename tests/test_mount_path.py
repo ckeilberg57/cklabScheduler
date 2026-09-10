@@ -26,6 +26,7 @@ The tests below verify:
   4. url_for() generates paths that include /sbalkcScheduler when SCRIPT_NAME is set
 """
 import contextlib
+import os
 import re
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
@@ -45,7 +46,7 @@ def make_app(test_db):
          patch.object(Settings, "COMMAND_HOST", "edge.example.com"), \
          patch.object(Settings, "API_USER", "user"), \
          patch.object(Settings, "API_PASS", "pass"), \
-         patch.object(Settings, "SECRET_KEY", "testsecret"), \
+         patch.object(Settings, "SECRET_KEY", os.environ["TEST_SECRET_KEY"]), \
          patch.object(Settings, "O365_ENABLED", False), \
          patch.object(Settings, "LOCAL_AUTH_ENABLED", True), \
          patch.object(Settings, "ENTRA_ENABLED", False), \
@@ -204,12 +205,12 @@ class TestScriptNamePropagation:
         from app.auth.local import hash_password
         from app.auth.models import create_local_user
         with patch.object(Settings, "DB_PATH", test_db):
-            create_local_user("scriptuser", hash_password("TestPassword123!"), role="scheduler_user")
+            create_local_user("scriptuser", hash_password(os.environ["TEST_USER_PASSWORD"]), role="scheduler_user")
         app = make_app(test_db)
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
                 # Log in first (no SCRIPT_NAME needed for login itself)
-                client.post("/login", data={"username": "scriptuser", "password": "TestPassword123!"})
+                client.post("/login", data={"username": "scriptuser", "password": os.environ["TEST_USER_PASSWORD"]})
                 # Now request the main page with SCRIPT_NAME
                 resp = client.get(
                     "/",

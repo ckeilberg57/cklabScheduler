@@ -1,3 +1,4 @@
+import os
 import pytest
 from unittest.mock import patch
 
@@ -28,7 +29,7 @@ def test_validate_web_succeeds_when_all_set():
          patch.object(Settings, "COMMAND_HOST", "edge.example.com"), \
          patch.object(Settings, "API_USER", "user"), \
          patch.object(Settings, "API_PASS", "pass"), \
-         patch.object(Settings, "SECRET_KEY", "supersecret"), \
+         patch.object(Settings, "SECRET_KEY", os.environ["TEST_SECRET_KEY"]), \
          patch.object(Settings, "O365_ENABLED", False), \
          patch.object(Settings, "LOCAL_AUTH_ENABLED", True), \
          patch.object(Settings, "ENTRA_ENABLED", False):
@@ -40,7 +41,7 @@ def test_validate_web_o365_requires_extra_vars_when_enabled():
          patch.object(Settings, "COMMAND_HOST", "edge.example.com"), \
          patch.object(Settings, "API_USER", "user"), \
          patch.object(Settings, "API_PASS", "pass"), \
-         patch.object(Settings, "SECRET_KEY", "supersecret"), \
+         patch.object(Settings, "SECRET_KEY", os.environ["TEST_SECRET_KEY"]), \
          patch.object(Settings, "O365_ENABLED", True), \
          patch.object(Settings, "O365_TENANT_ID", ""), \
          patch.object(Settings, "O365_CLIENT_ID", ""), \
@@ -62,7 +63,7 @@ def test_validate_web_o365_not_required_when_disabled():
          patch.object(Settings, "COMMAND_HOST", "edge.example.com"), \
          patch.object(Settings, "API_USER", "user"), \
          patch.object(Settings, "API_PASS", "pass"), \
-         patch.object(Settings, "SECRET_KEY", "supersecret"), \
+         patch.object(Settings, "SECRET_KEY", os.environ["TEST_SECRET_KEY"]), \
          patch.object(Settings, "O365_ENABLED", False), \
          patch.object(Settings, "O365_TENANT_ID", ""), \
          patch.object(Settings, "O365_CLIENT_ID", ""), \

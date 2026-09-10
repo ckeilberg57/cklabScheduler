@@ -13,6 +13,7 @@ Root cause fixed (r4):
   Backward compat: if the field is absent entirely (older firmware that only
   emits currently-registered aliases), the alias is included.
 """
+import os
 import pytest
 import requests
 from unittest.mock import MagicMock, patch
@@ -46,7 +47,7 @@ def make_app(test_db):
          patch.object(Settings, "COMMAND_HOST",     "edge.example.com"), \
          patch.object(Settings, "API_USER",         "user"), \
          patch.object(Settings, "API_PASS",         "pass"), \
-         patch.object(Settings, "SECRET_KEY",       "testsecret"), \
+         patch.object(Settings, "SECRET_KEY",       os.environ["TEST_SECRET_KEY"]), \
          patch.object(Settings, "O365_ENABLED",     False), \
          patch.object(Settings, "LOCAL_AUTH_ENABLED", True), \
          patch.object(Settings, "ENTRA_ENABLED",    False), \
@@ -65,10 +66,10 @@ def _login_admin(client, test_db):
     from app.auth.models import create_local_user
     with patch.object(Settings, "DB_PATH", test_db):
         try:
-            create_local_user("eptest_admin", hash_password("TestPassword123!"), role="administrator")
+            create_local_user("eptest_admin", hash_password(os.environ["TEST_USER_PASSWORD"]), role="administrator")
         except Exception:
             pass
-        client.post("/login", data={"username": "eptest_admin", "password": "TestPassword123!"})
+        client.post("/login", data={"username": "eptest_admin", "password": os.environ["TEST_USER_PASSWORD"]})
 
 
 # ── Unit tests for list_registered_endpoints ──────────────────────────────────

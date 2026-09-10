@@ -7,6 +7,7 @@ Covers:
   - Security headers: HTML responses include the required protective headers.
   - Hardcoded credentials: .env.example contains no CHANGE_ME placeholder values.
 """
+import os
 import pathlib
 from unittest.mock import MagicMock, patch
 
@@ -26,7 +27,7 @@ def make_app(test_db, extra_config=None):
         patch.object(Settings, "COMMAND_HOST", "edge.example.com"),
         patch.object(Settings, "API_USER", "user"),
         patch.object(Settings, "API_PASS", "pass"),
-        patch.object(Settings, "SECRET_KEY", "testsecret-" + "x" * 24),
+        patch.object(Settings, "SECRET_KEY", os.environ["TEST_SECRET_KEY"]),
         patch.object(Settings, "O365_ENABLED", False),
         patch.object(Settings, "LOCAL_AUTH_ENABLED", True),
         patch.object(Settings, "ENTRA_ENABLED", False),
@@ -88,14 +89,14 @@ class TestOpenRedirectHelper:
         from app.auth.models import create_local_user
         app = make_app(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
-            create_local_user("redir1", hash_password("TestPassword123!"), role="scheduler_user")
+            create_local_user("redir1", hash_password(os.environ["TEST_USER_PASSWORD"]), role="scheduler_user")
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
                 resp = client.post(
                     "/login",
                     data={
                         "username": "redir1",
-                        "password": "TestPassword123!",
+                        "password": os.environ["TEST_USER_PASSWORD"],
                         "next": "javascript:alert(1)",
                     },
                     follow_redirects=False,
@@ -109,14 +110,14 @@ class TestOpenRedirectHelper:
         from app.auth.models import create_local_user
         app = make_app(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
-            create_local_user("redir2", hash_password("TestPassword123!"), role="scheduler_user")
+            create_local_user("redir2", hash_password(os.environ["TEST_USER_PASSWORD"]), role="scheduler_user")
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
                 resp = client.post(
                     "/login",
                     data={
                         "username": "redir2",
-                        "password": "TestPassword123!",
+                        "password": os.environ["TEST_USER_PASSWORD"],
                         "next": "//evil.example.com",
                     },
                     follow_redirects=False,
@@ -142,13 +143,13 @@ class TestOpenRedirectHelper:
         from app.auth.models import create_local_user
         app = make_app(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
-            create_local_user("redir3", hash_password("TestPassword123!"), role="scheduler_user")
+            create_local_user("redir3", hash_password(os.environ["TEST_USER_PASSWORD"]), role="scheduler_user")
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
                 client.get("/login?next=/dashboard")
                 resp = client.post(
                     "/login",
-                    data={"username": "redir3", "password": "TestPassword123!"},
+                    data={"username": "redir3", "password": os.environ["TEST_USER_PASSWORD"]},
                     follow_redirects=False,
                 )
         location = resp.headers.get("Location", "")
@@ -160,13 +161,13 @@ class TestOpenRedirectHelper:
         from app.auth.models import create_local_user
         app = make_app(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
-            create_local_user("redir4", hash_password("TestPassword123!"), role="scheduler_user")
+            create_local_user("redir4", hash_password(os.environ["TEST_USER_PASSWORD"]), role="scheduler_user")
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
                 client.get("/login?next=//evil.example.com")
                 resp = client.post(
                     "/login",
-                    data={"username": "redir4", "password": "TestPassword123!"},
+                    data={"username": "redir4", "password": os.environ["TEST_USER_PASSWORD"]},
                     follow_redirects=False,
                 )
         location = resp.headers.get("Location", "")
@@ -187,10 +188,10 @@ class TestCSRFProtection:
             from app.auth.local import hash_password
             from app.auth.models import create_local_user
             try:
-                create_local_user("csrfuser", hash_password("TestPassword123!"), role="scheduler_user")
+                create_local_user("csrfuser", hash_password(os.environ["TEST_USER_PASSWORD"]), role="scheduler_user")
             except ValueError:
                 pass
-            client.post("/login", data={"username": "csrfuser", "password": "TestPassword123!"})
+            client.post("/login", data={"username": "csrfuser", "password": os.environ["TEST_USER_PASSWORD"]})
         app.config["WTF_CSRF_ENABLED"] = True
 
     def test_create_meeting_without_csrf_returns_400(self, test_db):

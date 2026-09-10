@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+!.env.test.example
+.env.test
 
 # ── Databases ─────────────────────────────────────────────────────────────────
 *.db

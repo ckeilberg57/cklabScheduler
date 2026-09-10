@@ -14,6 +14,8 @@ Covers:
   - Entra authentication flow stubs
   - Mount-path correctness for auth routes
 """
+import os
+import secrets
 import sqlite3
 from contextlib import closing
 from datetime import timedelta
@@ -38,7 +40,7 @@ def make_app(test_db, extra_config=None):
         patch.object(Settings, "COMMAND_HOST", "edge.example.com"),
         patch.object(Settings, "API_USER", "user"),
         patch.object(Settings, "API_PASS", "pass"),
-        patch.object(Settings, "SECRET_KEY", "testsecret-" + "x" * 24),
+        patch.object(Settings, "SECRET_KEY", os.environ["TEST_SECRET_KEY"]),
         patch.object(Settings, "O365_ENABLED", False),
         patch.object(Settings, "LOCAL_AUTH_ENABLED", True),
         patch.object(Settings, "ENTRA_ENABLED", False),
@@ -62,7 +64,7 @@ def create_test_user(test_db, username="testuser", role="scheduler_user", enable
         try:
             return create_local_user(
                 username,
-                hash_password("TestPassword123!"),
+                hash_password(os.environ["TEST_USER_PASSWORD"]),
                 display_name=username.title(),
                 role=role,
             )
@@ -79,8 +81,9 @@ def create_test_user(test_db, username="testuser", role="scheduler_user", enable
                 return row["id"]
 
 
-def login(client, test_db, username="testuser", password="TestPassword123!"):
+def login(client, test_db, username="testuser", password=None):
     """Perform a local login and return the response."""
+    password = password or os.environ["TEST_USER_PASSWORD"]
     with patch.object(Settings, "DB_PATH", test_db):
         return client.post(
             "/login",
@@ -179,6 +182,7 @@ class TestLocalLoginSuccess:
 
 class TestInvalidPassword:
     def test_wrong_password_returns_login_page(self, test_db):
+        invalid_pw = secrets.token_urlsafe(16)
         app = make_app(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
             create_test_user(test_db)
@@ -186,12 +190,13 @@ class TestInvalidPassword:
             with patch.object(Settings, "DB_PATH", test_db):
                 resp = client.post(
                     "/login",
-                    data={"username": "testuser", "password": "wrongpass"},
+                    data={"username": "testuser", "password": invalid_pw},
                 )
         assert resp.status_code == 200
         assert b"Invalid" in resp.data
 
     def test_wrong_password_does_not_set_session(self, test_db):
+        invalid_pw = secrets.token_urlsafe(16)
         app = make_app(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
             create_test_user(test_db)
@@ -199,7 +204,7 @@ class TestInvalidPassword:
             with patch.object(Settings, "DB_PATH", test_db):
                 client.post(
                     "/login",
-                    data={"username": "testuser", "password": "wrongpass"},
+                    data={"username": "testuser", "password": invalid_pw},
                 )
                 # After failed login, protected route must still redirect
                 resp = client.get("/")
@@ -215,7 +220,7 @@ class TestNonexistentUser:
             with patch.object(Settings, "DB_PATH", test_db):
                 resp_unknown = client.post(
                     "/login",
-                    data={"username": "doesnotexist", "password": "anything"},
+                    data={"username": "doesnotexist", "password": secrets.token_urlsafe(16)},
                 )
         assert b"Invalid" in resp_unknown.data
         assert resp_unknown.status_code == 200
@@ -235,7 +240,7 @@ class TestDisabledAccount:
             with patch.object(Settings, "DB_PATH", test_db):
                 resp = client.post(
                     "/login",
-                    data={"username": "disableduser", "password": "TestPassword123!"},
+                    data={"username": "disableduser", "password": os.environ["TEST_USER_PASSWORD"]},
                 )
         assert resp.status_code == 200
         assert b"Invalid" in resp.data
@@ -278,7 +283,7 @@ class TestRoles:
         from app.auth.models import create_local_user, get_user_by_id
         with patch.object(Settings, "DB_PATH", test_db):
             uid = create_local_user(
-                "scheduser", hash_password("TestPassword123!"), role="scheduler_user"
+                "scheduser", hash_password(os.environ["TEST_USER_PASSWORD"]), role="scheduler_user"
             )
             user = get_user_by_id(uid)
         assert user.has_role("scheduler_user") is True
@@ -290,7 +295,7 @@ class TestRoles:
         from app.auth.models import create_local_user, get_user_by_id
         with patch.object(Settings, "DB_PATH", test_db):
             uid = create_local_user(
-                "adminuser2", hash_password("TestPassword123!"), role="administrator"
+                "adminuser2", hash_password(os.environ["TEST_USER_PASSWORD"]), role="administrator"
             )
             user = get_user_by_id(uid)
         assert user.has_role("administrator") is True
@@ -318,23 +323,25 @@ class TestLogout:
 class TestPasswordHashing:
     def test_password_is_hashed_in_database(self, test_db):
         from app.auth.local import hash_password
+        raw_pw = secrets.token_urlsafe(24)
         with patch.object(Settings, "DB_PATH", test_db):
             from app.auth.models import create_local_user
-            create_local_user("hashtest", hash_password("MySecretPass123"))
+            create_local_user("hashtest", hash_password(raw_pw))
             with closing(db()) as conn:
                 row = conn.execute(
                     "SELECT password_hash FROM users WHERE username='hashtest'"
                 ).fetchone()
         assert row is not None
-        assert row["password_hash"] != "MySecretPass123"
+        assert row["password_hash"] != raw_pw
         assert row["password_hash"].startswith("pbkdf2:")
 
     def test_hash_verifies_correctly(self, test_db):
         from app.auth.local import hash_password, verify_password
-        pw = "CorrectHorseBattery!"
+        pw = secrets.token_urlsafe(24)
+        wrong_pw = secrets.token_urlsafe(16)
         h = hash_password(pw)
         assert verify_password(h, pw) is True
-        assert verify_password(h, "WrongPassword") is False
+        assert verify_password(h, wrong_pw) is False
 
     def test_password_too_short_raises(self):
         from app.auth.local import validate_password_strength
@@ -423,7 +430,7 @@ class TestConfiguration:
              patch.object(Settings, "COMMAND_HOST", "h"), \
              patch.object(Settings, "API_USER", "u"), \
              patch.object(Settings, "API_PASS", "p"), \
-             patch.object(Settings, "SECRET_KEY", "k"):
+             patch.object(Settings, "SECRET_KEY", os.environ["TEST_SECRET_KEY"]):
             with pytest.raises(RuntimeError, match="Authentication misconfiguration"):
                 Settings.validate_web()
 
@@ -465,14 +472,14 @@ class TestOpenRedirect:
         app = make_app(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
             from app.auth.models import create_local_user
-            create_local_user("redirecttest", hash_password("TestPassword123!"), role="scheduler_user")
+            create_local_user("redirecttest", hash_password(os.environ["TEST_USER_PASSWORD"]), role="scheduler_user")
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
                 resp = client.post(
                     "/login",
                     data={
                         "username": "redirecttest",
-                        "password": "TestPassword123!",
+                        "password": os.environ["TEST_USER_PASSWORD"],
                         "next": "https://evil.com/steal",
                     },
                     follow_redirects=False,
@@ -486,14 +493,14 @@ class TestOpenRedirect:
         app = make_app(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
             from app.auth.models import create_local_user
-            create_local_user("nexttest", hash_password("TestPassword123!"), role="scheduler_user")
+            create_local_user("nexttest", hash_password(os.environ["TEST_USER_PASSWORD"]), role="scheduler_user")
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
                 resp = client.post(
                     "/login",
                     data={
                         "username": "nexttest",
-                        "password": "TestPassword123!",
+                        "password": os.environ["TEST_USER_PASSWORD"],
                         "next": "http://localhost/",
                     },
                     follow_redirects=False,
@@ -505,20 +512,22 @@ class TestOpenRedirect:
 
 class TestHealthSecurity:
     def test_health_does_not_expose_tenant_id(self, test_db):
+        fake_tenant_id = "test-tenant-" + secrets.token_hex(8)
         app = make_app(test_db)
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db), \
-                 patch.object(Settings, "ENTRA_TENANT_ID", "secret-tenant-id"):
+                 patch.object(Settings, "ENTRA_TENANT_ID", fake_tenant_id):
                 resp = client.get("/api/health")
-        assert "secret-tenant-id" not in resp.get_data(as_text=True)
+        assert fake_tenant_id not in resp.get_data(as_text=True)
 
     def test_health_does_not_expose_client_id(self, test_db):
+        fake_client_id = "test-client-" + secrets.token_hex(8)
         app = make_app(test_db)
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db), \
-                 patch.object(Settings, "ENTRA_CLIENT_ID", "secret-client-id"):
+                 patch.object(Settings, "ENTRA_CLIENT_ID", fake_client_id):
                 resp = client.get("/api/health")
-        assert "secret-client-id" not in resp.get_data(as_text=True)
+        assert fake_client_id not in resp.get_data(as_text=True)
 
     def test_health_reports_auth_status(self, test_db):
         app = make_app(test_db)
@@ -593,19 +602,21 @@ class TestDatabaseSchema:
         from app.auth.local import hash_password
         from app.auth.models import create_local_user
         with patch.object(Settings, "DB_PATH", test_db):
-            create_local_user("dupeuser", hash_password("TestPassword123!"))
+            create_local_user("dupeuser", hash_password(os.environ["TEST_USER_PASSWORD"]))
             with pytest.raises(ValueError):
-                create_local_user("dupeuser", hash_password("TestPassword123!"))
+                create_local_user("dupeuser", hash_password(os.environ["TEST_USER_PASSWORD"]))
 
     def test_password_reset_updates_hash(self, test_db):
         from app.auth.local import hash_password, verify_password
         from app.auth.models import create_local_user, set_user_password, get_user_row_by_username
+        old_pw = secrets.token_urlsafe(32)
+        new_pw = secrets.token_urlsafe(32)
         with patch.object(Settings, "DB_PATH", test_db):
-            create_local_user("resetme", hash_password("OldPassword123!"))
-            set_user_password("resetme", hash_password("NewPassword456!"))
+            create_local_user("resetme", hash_password(old_pw))
+            set_user_password("resetme", hash_password(new_pw))
             row = get_user_row_by_username("resetme")
-        assert verify_password(row["password_hash"], "NewPassword456!")
-        assert not verify_password(row["password_hash"], "OldPassword123!")
+        assert verify_password(row["password_hash"], new_pw)
+        assert not verify_password(row["password_hash"], old_pw)
 
 
 # ── 36–37. Mount-path regression ─────────────────────────────────────────────

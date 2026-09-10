@@ -1,3 +1,6 @@
+import os
+import secrets
+
 import pytest
 from contextlib import closing
 from unittest.mock import patch
@@ -6,6 +9,19 @@ from app.config import Settings
 from app.database import db, init_db
 from app.meeting_utils import iso, now_utc
 from datetime import timedelta
+
+
+def _ensure_test_environment():
+    """Generate synthetic test credentials at pytest startup.
+
+    Uses os.environ.setdefault so CI-supplied values are never overwritten.
+    Values are cryptographically random and have no meaning outside the test run.
+    """
+    os.environ.setdefault("TEST_USER_PASSWORD", secrets.token_urlsafe(32))
+    os.environ.setdefault("TEST_SECRET_KEY",    secrets.token_hex(32))
+
+
+_ensure_test_environment()
 
 
 @pytest.fixture

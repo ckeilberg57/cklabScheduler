@@ -1,3 +1,4 @@
+import os
 from contextlib import closing
 from datetime import timedelta
 from unittest.mock import patch
@@ -26,7 +27,7 @@ def make_app(test_db):
          patch.object(Settings, "COMMAND_HOST", "edge.example.com"), \
          patch.object(Settings, "API_USER", "user"), \
          patch.object(Settings, "API_PASS", "pass"), \
-         patch.object(Settings, "SECRET_KEY", "testsecret"), \
+         patch.object(Settings, "SECRET_KEY", os.environ["TEST_SECRET_KEY"]), \
          patch.object(Settings, "O365_ENABLED", False), \
          patch.object(Settings, "LOCAL_AUTH_ENABLED", True), \
          patch.object(Settings, "ENTRA_ENABLED", False), \

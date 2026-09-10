@@ -15,6 +15,7 @@ create_app().  make_app() only patches the settings needed by create_app()
 each request.
 """
 import os
+import secrets
 import subprocess
 import tempfile
 from pathlib import Path
@@ -40,7 +41,7 @@ def make_app(test_db):
          patch.object(Settings, "COMMAND_HOST",     "edge.example.com"), \
          patch.object(Settings, "API_USER",         "user"), \
          patch.object(Settings, "API_PASS",         "pass"), \
-         patch.object(Settings, "SECRET_KEY",       "testsecret"), \
+         patch.object(Settings, "SECRET_KEY",       os.environ["TEST_SECRET_KEY"]), \
          patch.object(Settings, "O365_ENABLED",     False), \
          patch.object(Settings, "LOCAL_AUTH_ENABLED", True), \
          patch.object(Settings, "ENTRA_ENABLED",    False), \
@@ -59,12 +60,12 @@ def _logged_in_client(app, test_db):
     from app.auth.models import create_local_user
     with patch.object(Settings, "DB_PATH", test_db):
         try:
-            create_local_user("displaytest", hash_password("TestPassword123!"), role="administrator")
+            create_local_user("displaytest", hash_password(os.environ["TEST_USER_PASSWORD"]), role="administrator")
         except ValueError:
             pass
     client = app.test_client()
     with patch.object(Settings, "DB_PATH", test_db):
-        client.post("/login", data={"username": "displaytest", "password": "TestPassword123!"})
+        client.post("/login", data={"username": "displaytest", "password": os.environ["TEST_USER_PASSWORD"]})
     return client
 
 
@@ -189,7 +190,8 @@ def test_control_display_name_does_not_appear_in_html_title(test_db):
 
 def test_upgrade_adds_app_display_name_when_absent():
     """upgrade.sh _add_env_default adds APP_DISPLAY_NAME when it is absent."""
-    env_before = "REG_STATUS_HOST=pexip.example.com\nSECRET_KEY=abc123\n"
+    _sk = secrets.token_hex(16)
+    env_before = f"REG_STATUS_HOST=pexip.example.com\nSECRET_KEY={_sk}\n"
     stdout, env_after = _run_add_env_default(
         env_before, "APP_DISPLAY_NAME", "SBALKC Scheduler"
     )
@@ -199,10 +201,11 @@ def test_upgrade_adds_app_display_name_when_absent():
 
 def test_upgrade_preserves_existing_custom_display_name():
     """upgrade.sh _add_env_default does NOT overwrite an admin-set APP_DISPLAY_NAME."""
+    _sk = secrets.token_hex(16)
     env_before = (
         "REG_STATUS_HOST=pexip.example.com\n"
         'APP_DISPLAY_NAME="Acme Telehealth"\n'
-        "SECRET_KEY=abc123\n"
+        f"SECRET_KEY={_sk}\n"
     )
     stdout, env_after = _run_add_env_default(
         env_before, "APP_DISPLAY_NAME", "SBALKC Scheduler"
