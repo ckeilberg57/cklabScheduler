@@ -1,4 +1,4 @@
-# Whiteglove Scheduler
+# Whiteglove Scheduler (Known as sbalkcScheduler in reference below)
 
 A production-grade Pexip meeting scheduler built on Flask and APScheduler. It lets operators book meetings with registered Pexip endpoints, automatically dials those endpoints at the scheduled start time, and disconnects them at the scheduled end time.
 
