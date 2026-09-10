@@ -1,4 +1,5 @@
 import os
+import re
 import secrets
 
 import pytest
@@ -22,6 +23,33 @@ def _ensure_test_environment():
 
 
 _ensure_test_environment()
+
+# ── CSRF helpers ──────────────────────────────────────────────────────────────
+_CSRF_META_RE  = re.compile(r'<meta[^>]+name="csrf-token"[^>]+content="([^"]+)"')
+_CSRF_INPUT_RE = re.compile(r'<input[^>]+name="csrf_token"[^>]+value="([^"]+)"', re.IGNORECASE)
+
+
+def get_csrf_token(client, url="/login"):
+    """Return a CSRF token valid for *client*'s current session.
+
+    Makes a GET request to *url* and extracts the CSRF token from the
+    rendered HTML.  The Flask test client's session cookie ensures the
+    token is tied to this client's session, so it passes Flask-WTF
+    validation on the subsequent POST.
+
+    Use url="/login" (default) when not yet authenticated — the login
+    form renders the token in a hidden ``<input name="csrf_token">`` field.
+    Use url="/" when already authenticated — the main page renders the
+    token in ``<meta name="csrf-token">``.
+    """
+    resp = client.get(url)
+    html = resp.get_data(as_text=True)
+    m = _CSRF_META_RE.search(html) or _CSRF_INPUT_RE.search(html)
+    if not m:
+        raise RuntimeError(
+            f"No CSRF token found in GET {url!r} (status {resp.status_code})"
+        )
+    return m.group(1)
 
 
 @pytest.fixture

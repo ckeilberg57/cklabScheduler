@@ -31,6 +31,8 @@ import re
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
+from tests.conftest import get_csrf_token
+
 import pytest
 
 from app.config import Settings
@@ -55,7 +57,6 @@ def make_app(test_db):
         from app import create_app
         app = create_app()
         app.config["TESTING"] = True
-        app.config["WTF_CSRF_ENABLED"] = False
         return app
 
 
@@ -210,7 +211,8 @@ class TestScriptNamePropagation:
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
                 # Log in first (no SCRIPT_NAME needed for login itself)
-                client.post("/login", data={"username": "scriptuser", "password": os.environ["TEST_USER_PASSWORD"]})
+                csrf = get_csrf_token(client)
+                client.post("/login", data={"username": "scriptuser", "password": os.environ["TEST_USER_PASSWORD"], "csrf_token": csrf})
                 # Now request the main page with SCRIPT_NAME
                 resp = client.get(
                     "/",

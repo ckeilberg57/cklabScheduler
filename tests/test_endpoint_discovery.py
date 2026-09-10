@@ -18,6 +18,8 @@ import pytest
 import requests
 from unittest.mock import MagicMock, patch
 
+from tests.conftest import get_csrf_token
+
 from app.config import Settings
 from app.pexip import PexipAPI
 
@@ -56,7 +58,6 @@ def make_app(test_db):
         from app import create_app
         app = create_app()
         app.config["TESTING"] = True
-        app.config["WTF_CSRF_ENABLED"] = False
         return app, mock_pexip
 
 
@@ -69,7 +70,8 @@ def _login_admin(client, test_db):
             create_local_user("eptest_admin", hash_password(os.environ["TEST_USER_PASSWORD"]), role="administrator")
         except Exception:
             pass
-        client.post("/login", data={"username": "eptest_admin", "password": os.environ["TEST_USER_PASSWORD"]})
+        csrf = get_csrf_token(client)
+        client.post("/login", data={"username": "eptest_admin", "password": os.environ["TEST_USER_PASSWORD"], "csrf_token": csrf})
 
 
 # ── Unit tests for list_registered_endpoints ──────────────────────────────────

@@ -18,6 +18,8 @@ import os
 import pytest
 from unittest.mock import patch, MagicMock
 
+from tests.conftest import get_csrf_token
+
 from app.config import Settings
 
 
@@ -40,7 +42,6 @@ def _make_app(test_db, mock_endpoints):
         from app import create_app
         app = create_app()
         app.config["TESTING"] = True
-        app.config["WTF_CSRF_ENABLED"] = False
         return app, mock_pexip
 
 
@@ -52,7 +53,8 @@ def _login(client, test_db):
             create_local_user("refresh_admin", hash_password(os.environ["TEST_USER_PASSWORD"]), role="administrator")
         except Exception:
             pass
-    client.post("/login", data={"username": "refresh_admin", "password": os.environ["TEST_USER_PASSWORD"]})
+    csrf = get_csrf_token(client)
+    client.post("/login", data={"username": "refresh_admin", "password": os.environ["TEST_USER_PASSWORD"], "csrf_token": csrf})
 
 
 def _ep(alias, display_name="Room", registered=True):

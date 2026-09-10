@@ -21,6 +21,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from tests.conftest import get_csrf_token
+
 import pytest
 
 from app.config import Settings
@@ -50,7 +52,6 @@ def make_app(test_db):
         from app import create_app
         app = create_app()
         app.config["TESTING"] = True
-        app.config["WTF_CSRF_ENABLED"] = False
     return app
 
 
@@ -65,7 +66,8 @@ def _logged_in_client(app, test_db):
             pass
     client = app.test_client()
     with patch.object(Settings, "DB_PATH", test_db):
-        client.post("/login", data={"username": "displaytest", "password": os.environ["TEST_USER_PASSWORD"]})
+        csrf = get_csrf_token(client)
+        client.post("/login", data={"username": "displaytest", "password": os.environ["TEST_USER_PASSWORD"], "csrf_token": csrf})
     return client
 
 

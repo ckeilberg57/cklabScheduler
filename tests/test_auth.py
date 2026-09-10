@@ -21,6 +21,8 @@ from contextlib import closing
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
+from tests.conftest import get_csrf_token
+
 import pytest
 
 from app.config import Settings
@@ -50,7 +52,6 @@ def make_app(test_db, extra_config=None):
         from app import create_app
         app = create_app()
         app.config["TESTING"] = True
-        app.config["WTF_CSRF_ENABLED"] = False
         if extra_config:
             app.config.update(extra_config)
         return app
@@ -82,12 +83,13 @@ def create_test_user(test_db, username="testuser", role="scheduler_user", enable
 
 
 def login(client, test_db, username="testuser", password=None):
-    """Perform a local login and return the response."""
+    """Perform a local login with a valid CSRF token and return the response."""
     password = password or os.environ["TEST_USER_PASSWORD"]
+    csrf = get_csrf_token(client)  # GET /login establishes session + real CSRF token
     with patch.object(Settings, "DB_PATH", test_db):
         return client.post(
             "/login",
-            data={"username": username, "password": password},
+            data={"username": username, "password": password, "csrf_token": csrf},
             follow_redirects=False,
         )
 
@@ -134,7 +136,8 @@ class TestUnauthenticatedAPI:
     def test_api_create_meeting_returns_401(self, test_db):
         app = make_app(test_db)
         with app.test_client() as client:
-            resp = client.post("/api/meetings", json={})
+            csrf = get_csrf_token(client)
+            resp = client.post("/api/meetings", json={}, headers={"X-CSRFToken": csrf})
         assert resp.status_code == 401
 
     def test_health_is_public(self, test_db):
@@ -188,9 +191,10 @@ class TestInvalidPassword:
             create_test_user(test_db)
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
+                csrf = get_csrf_token(client)
                 resp = client.post(
                     "/login",
-                    data={"username": "testuser", "password": invalid_pw},
+                    data={"username": "testuser", "password": invalid_pw, "csrf_token": csrf},
                 )
         assert resp.status_code == 200
         assert b"Invalid" in resp.data
@@ -202,9 +206,10 @@ class TestInvalidPassword:
             create_test_user(test_db)
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
+                csrf = get_csrf_token(client)
                 client.post(
                     "/login",
-                    data={"username": "testuser", "password": invalid_pw},
+                    data={"username": "testuser", "password": invalid_pw, "csrf_token": csrf},
                 )
                 # After failed login, protected route must still redirect
                 resp = client.get("/")
@@ -218,9 +223,10 @@ class TestNonexistentUser:
         app = make_app(test_db)
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
+                csrf = get_csrf_token(client)
                 resp_unknown = client.post(
                     "/login",
-                    data={"username": "doesnotexist", "password": secrets.token_urlsafe(16)},
+                    data={"username": "doesnotexist", "password": secrets.token_urlsafe(16), "csrf_token": csrf},
                 )
         assert b"Invalid" in resp_unknown.data
         assert resp_unknown.status_code == 200
@@ -238,9 +244,10 @@ class TestDisabledAccount:
                 conn.commit()
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
+                csrf = get_csrf_token(client)
                 resp = client.post(
                     "/login",
-                    data={"username": "disableduser", "password": os.environ["TEST_USER_PASSWORD"]},
+                    data={"username": "disableduser", "password": os.environ["TEST_USER_PASSWORD"], "csrf_token": csrf},
                 )
         assert resp.status_code == 200
         assert b"Invalid" in resp.data
@@ -398,12 +405,13 @@ class TestEntraStubs:
 
     def test_entra_identity_extraction(self):
         from app.auth.entra import extract_identity_from_claims
+        fake_email = f"user-{secrets.token_hex(6)}@example.com"
         claims = {
-            "preferred_username": "user@example.com",
+            "preferred_username": fake_email,
             "name": "Test User",
         }
         username, display_name = extract_identity_from_claims(claims)
-        assert username == "user@example.com"
+        assert username == fake_email
         assert display_name == "Test User"
 
 
@@ -429,7 +437,7 @@ class TestConfiguration:
              patch.object(Settings, "REG_STATUS_HOST", "h"), \
              patch.object(Settings, "COMMAND_HOST", "h"), \
              patch.object(Settings, "API_USER", "u"), \
-             patch.object(Settings, "API_PASS", "p"), \
+             patch.object(Settings, "API_PASS", secrets.token_urlsafe(8)), \
              patch.object(Settings, "SECRET_KEY", os.environ["TEST_SECRET_KEY"]):
             with pytest.raises(RuntimeError, match="Authentication misconfiguration"):
                 Settings.validate_web()
@@ -446,21 +454,46 @@ class TestConfiguration:
 # ── 25–26. CSRF protection ────────────────────────────────────────────────────
 
 class TestCSRF:
-    def test_post_without_csrf_returns_400_when_enabled(self, test_db):
-        """When CSRF is enabled, a POST without token is rejected."""
+    def test_post_without_csrf_returns_400(self, test_db):
+        """A state-mutating API request without a CSRF token returns 400."""
         app = make_app(test_db)
-        app.config["WTF_CSRF_ENABLED"] = True
         with patch.object(Settings, "DB_PATH", test_db):
             create_test_user(test_db)
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
-                # Log in first (via test helper with CSRF disabled for login)
-                app.config["WTF_CSRF_ENABLED"] = False
-                login(client, test_db)
-                app.config["WTF_CSRF_ENABLED"] = True
-                # Then try a mutating API call without CSRF token
-                resp = client.post("/api/meetings", json={})
+                login(client, test_db)   # logs in with a valid CSRF token
+                resp = client.post("/api/meetings", json={})   # no token → 400
         assert resp.status_code == 400
+
+    def test_post_with_invalid_csrf_token_returns_400(self, test_db):
+        """A POST with a forged CSRF token is rejected even when authenticated."""
+        app = make_app(test_db)
+        with patch.object(Settings, "DB_PATH", test_db):
+            create_test_user(test_db)
+        with app.test_client() as client:
+            with patch.object(Settings, "DB_PATH", test_db):
+                login(client, test_db)
+                # Visit an authenticated page so a fresh CSRF token is stored in session
+                get_csrf_token(client, "/")
+                # Submit a different (invalid) token — must be rejected
+                wrong_csrf = secrets.token_urlsafe(32)
+                resp = client.post(
+                    "/api/meetings", json={},
+                    headers={"X-CSRFToken": wrong_csrf},
+                )
+        assert resp.status_code == 400
+
+    def test_post_with_valid_csrf_token_passes_csrf_check(self, test_db):
+        """A login form submission with a valid CSRF token succeeds."""
+        app = make_app(test_db)
+        with patch.object(Settings, "DB_PATH", test_db):
+            create_test_user(test_db)
+        with app.test_client() as client:
+            with patch.object(Settings, "DB_PATH", test_db):
+                resp = login(client, test_db)
+        # Successful login (CSRF token accepted) redirects away from /login
+        assert resp.status_code == 302
+        assert "/login" not in resp.headers.get("Location", "")
 
 
 # ── 27. Open redirect protection ─────────────────────────────────────────────
@@ -475,12 +508,14 @@ class TestOpenRedirect:
             create_local_user("redirecttest", hash_password(os.environ["TEST_USER_PASSWORD"]), role="scheduler_user")
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
+                csrf = get_csrf_token(client)
                 resp = client.post(
                     "/login",
                     data={
                         "username": "redirecttest",
                         "password": os.environ["TEST_USER_PASSWORD"],
                         "next": "https://evil.com/steal",
+                        "csrf_token": csrf,
                     },
                     follow_redirects=False,
                 )
@@ -496,12 +531,14 @@ class TestOpenRedirect:
             create_local_user("nexttest", hash_password(os.environ["TEST_USER_PASSWORD"]), role="scheduler_user")
         with app.test_client() as client:
             with patch.object(Settings, "DB_PATH", test_db):
+                csrf = get_csrf_token(client)
                 resp = client.post(
                     "/login",
                     data={
                         "username": "nexttest",
                         "password": os.environ["TEST_USER_PASSWORD"],
                         "next": "http://localhost/",
+                        "csrf_token": csrf,
                     },
                     follow_redirects=False,
                 )
