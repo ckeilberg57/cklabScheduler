@@ -1,5 +1,5 @@
 """
-Security regression tests for cklabScheduler.
+Security regression tests for SBALKC Scheduler.
 
 Covers:
   - Open redirect: _safe_redirect_url rejects javascript:, data:, //host, external URLs.

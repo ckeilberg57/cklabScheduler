@@ -21,7 +21,7 @@ def api_health():
     """
     overall_ok = True
     response = {
-        "service": "cklabScheduler",
+        "service": "sbalkcScheduler",
         "version": VERSION,
     }
 

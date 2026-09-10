@@ -15,7 +15,7 @@ Passwords are prompted securely and never passed as command-line arguments.
 Minimum password length: 12 characters.
 
 In production, set DB_PATH in the environment or the system config file is
-loaded automatically from /etc/cklabScheduler/cklabScheduler.env.
+loaded automatically from /etc/sbalkcScheduler/sbalkcScheduler.env.
 """
 import argparse
 import getpass
@@ -25,7 +25,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Load production config before importing app modules.
-_system_env = Path("/etc/cklabScheduler/cklabScheduler.env")
+_system_env = Path("/etc/sbalkcScheduler/sbalkcScheduler.env")
 _dev_env = Path(__file__).resolve().parent.parent / ".env"
 if _system_env.exists():
     load_dotenv(_system_env, override=False)

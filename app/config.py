@@ -7,7 +7,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 class Settings:
-    DB_PATH = os.getenv("DB_PATH", "/var/lib/cklabScheduler/scheduler.db")
+    DB_PATH = os.getenv("DB_PATH", "/var/lib/sbalkcScheduler/scheduler.db")
 
     REG_STATUS_HOST = os.getenv("REG_STATUS_HOST", "")
     COMMAND_HOST = os.getenv("COMMAND_HOST", "")

@@ -7,7 +7,7 @@ This guide walks an Azure administrator through registering SBALKC Scheduler as 
 ## Prerequisites
 
 - An Azure tenant where you have **Application Administrator** (or Global Administrator) privileges
-- The public URL where SBALKC Scheduler is accessible (e.g. `https://scheduler.example.com/cklabScheduler`)
+- The public URL where SBALKC Scheduler is accessible (e.g. `https://scheduler.example.com/sbalkcScheduler`)
 - SBALKC Scheduler installed and accessible via HTTPS — the redirect URI must be reachable from Entra
 
 ---
@@ -30,7 +30,7 @@ This guide walks an Azure administrator through registering SBALKC Scheduler as 
 1. On the app registration page, go to **Authentication → Add a platform → Web**.
 2. Set the **Redirect URI** to:
    ```
-   https://<your-server-hostname>/cklabScheduler/auth/callback
+   https://<your-server-hostname>/sbalkcScheduler/auth/callback
    ```
 3. Under **Advanced settings**, leave **Implicit grant** unchecked (Authorization Code Flow does not use implicit grant).
 4. Click **Configure**.
@@ -99,8 +99,8 @@ At the end of registration, you should have:
 | **Tenant ID** | App registration overview → Directory (tenant) ID |
 | **Client ID** | App registration overview → Application (client) ID |
 | **Client secret** | Saved from Step 3 |
-| **Redirect URI** | `https://<hostname>/cklabScheduler/auth/callback` |
-| **Post-logout URI** | `https://<hostname>/cklabScheduler/login` |
+| **Redirect URI** | `https://<hostname>/sbalkcScheduler/auth/callback` |
+| **Post-logout URI** | `https://<hostname>/sbalkcScheduler/login` |
 
 ---
 
@@ -108,7 +108,7 @@ At the end of registration, you should have:
 
 **During fresh installation** (`deploy/install.sh`), answer `Y` when asked about Entra and enter the values above.
 
-**On an existing installation**, edit `/etc/cklabScheduler/cklabScheduler.env` and add:
+**On an existing installation**, edit `/etc/sbalkcScheduler/sbalkcScheduler.env` and add:
 
 ```
 LOCAL_AUTH_ENABLED="true"
@@ -117,14 +117,14 @@ ENTRA_TENANT_ID="<your-tenant-id>"
 ENTRA_CLIENT_ID="<your-client-id>"
 ENTRA_CLIENT_SECRET="<your-client-secret>"
 ENTRA_AUTHORITY="https://login.microsoftonline.com/<your-tenant-id>"
-ENTRA_REDIRECT_URI="https://<hostname>/cklabScheduler/auth/callback"
-ENTRA_POST_LOGOUT_REDIRECT_URI="https://<hostname>/cklabScheduler/login"
+ENTRA_REDIRECT_URI="https://<hostname>/sbalkcScheduler/auth/callback"
+ENTRA_POST_LOGOUT_REDIRECT_URI="https://<hostname>/sbalkcScheduler/login"
 ```
 
 Then restart the web service:
 
 ```bash
-systemctl restart cklab-scheduler-web
+systemctl restart sbalkc-scheduler-web
 ```
 
 ---
@@ -165,7 +165,7 @@ Users without any matching role assignment receive a 403 Access Denied response 
 - Check that the role value is exactly `Scheduler.Administrator` or `Scheduler.User` (case-sensitive).
 
 **Client secret error at startup**
-- The secret may have expired. Create a new one in Azure and update `ENTRA_CLIENT_SECRET`, then `systemctl restart cklab-scheduler-web`.
+- The secret may have expired. Create a new one in Azure and update `ENTRA_CLIENT_SECRET`, then `systemctl restart sbalkc-scheduler-web`.
 
 ---
 
@@ -174,7 +174,7 @@ Users without any matching role assignment receive a 403 Access Denied response 
 - SBALKC Scheduler uses the **Authorization Code Flow** — it never handles Microsoft usernames or passwords.
 - MFA is enforced by Entra (or Conditional Access), not by this application.
 - ID tokens and access tokens are never logged. Only the user's display name, email, and role are stored in the SQLite user record.
-- The client secret is stored in the env file with `640 root:cklabscheduler` permissions.
+- The client secret is stored in the env file with `640 root:sbalkcscheduler` permissions.
 - SBALKC Scheduler is registered as a **single-tenant** application. Users from other directories cannot sign in.
 
 ---
@@ -182,6 +182,6 @@ Users without any matching role assignment receive a 403 Access Denied response 
 ## Rotating the client secret
 
 1. In Azure, create a new client secret before the existing one expires.
-2. Update `ENTRA_CLIENT_SECRET` in `/etc/cklabScheduler/cklabScheduler.env`.
-3. Run `systemctl restart cklab-scheduler-web`.
+2. Update `ENTRA_CLIENT_SECRET` in `/etc/sbalkcScheduler/sbalkcScheduler.env`.
+3. Run `systemctl restart sbalkc-scheduler-web`.
 4. Verify sign-in works, then delete the old secret in Azure.

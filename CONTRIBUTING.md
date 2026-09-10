@@ -18,7 +18,7 @@ deploy/                 Installation and maintenance scripts
   verify_install.sh     Post-install automated checks
   TEST_PLAN.md          Manual validation procedure
   *.service             systemd unit files
-  cklabscheduler.conf   Apache virtual host template
+  sbalkcscheduler.conf   Apache virtual host template
 tests/                  Automated test suite (not deployed to server)
 worker.py               Standalone scheduler process entry point
 wsgi.py                 Gunicorn entry point
@@ -39,7 +39,7 @@ requirements.txt        Python dependencies (pinned versions)
 
 ```bash
 git clone <repo-url>
-cd cklabScheduler
+cd sbalkcScheduler-rebuild
 python3.12 -m venv venv
 source venv/bin/activate
 ```
@@ -64,7 +64,7 @@ Edit `.env` with the hostnames and credentials for your development Pexip enviro
 flask --app wsgi:application run --host 127.0.0.1 --port 5080
 ```
 
-The application will be accessible at `http://127.0.0.1:5080`. Note that the production mount path is `/cklabScheduler/`; in development the app runs at `/`.
+The application will be accessible at `http://127.0.0.1:5080`. Note that the production mount path is `/sbalkcScheduler/`; in development the app runs at `/`.
 
 ### 5. Run the scheduler worker (separate terminal)
 

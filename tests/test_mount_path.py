@@ -1,29 +1,29 @@
 """
-Regression tests for the /cklabScheduler subpath deployment.
+Regression tests for the /sbalkcScheduler subpath deployment.
 
 Background
 ----------
-Phase 3 (r3) uncovered that Apache ProxyPass was stripping the /cklabScheduler
+Phase 3 (r3) uncovered that Apache ProxyPass was stripping the /sbalkcScheduler
 prefix before forwarding to Gunicorn:
 
     OLD (broken):
-      ProxyPass /cklabScheduler/ http://127.0.0.1:5080/
+      ProxyPass /sbalkcScheduler/ http://127.0.0.1:5080/
       → Apache forwards /api/health
-      → Gunicorn SCRIPT_NAME=/cklabScheduler tries path.split('/cklabScheduler',1)[1]
-      → '/api/health'.split('/cklabScheduler',1) = ['/api/health']  (one element)
+      → Gunicorn SCRIPT_NAME=/sbalkcScheduler tries path.split('/sbalkcScheduler',1)[1]
+      → '/api/health'.split('/sbalkcScheduler',1) = ['/api/health']  (one element)
       → ['/api/health'][1]  → IndexError — Flask never reached
 
     NEW (fixed):
-      ProxyPass /cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/
-      → Apache forwards /cklabScheduler/api/health
-      → Gunicorn splits correctly → PATH_INFO=/api/health, SCRIPT_NAME=/cklabScheduler
+      ProxyPass /sbalkcScheduler/ http://127.0.0.1:5080/sbalkcScheduler/
+      → Apache forwards /sbalkcScheduler/api/health
+      → Gunicorn splits correctly → PATH_INFO=/api/health, SCRIPT_NAME=/sbalkcScheduler
       → Flask receives PATH_INFO=/api/health, routes correctly → 200
 
 The tests below verify:
   1. The Gunicorn SCRIPT_NAME split math (pure unit tests, no Flask)
   2. Flask routes work when Gunicorn-processed WSGI environ is presented
   3. request.script_root is populated in the template's <meta name="app-root"> tag
-  4. url_for() generates paths that include /cklabScheduler when SCRIPT_NAME is set
+  4. url_for() generates paths that include /sbalkcScheduler when SCRIPT_NAME is set
 """
 import contextlib
 import re
@@ -34,7 +34,7 @@ import pytest
 
 from app.config import Settings
 
-SCRIPT_NAME = "/cklabScheduler"
+SCRIPT_NAME = "/sbalkcScheduler"
 
 
 def make_app(test_db):
@@ -68,7 +68,7 @@ class TestGunicornScriptNameSplitting:
 
     def test_split_succeeds_when_prefix_preserved(self):
         """Apache NEW config: full path forwarded → Gunicorn split succeeds."""
-        full_path = "/cklabScheduler/api/health"
+        full_path = "/sbalkcScheduler/api/health"
         parts = full_path.split(SCRIPT_NAME, 1)
         assert len(parts) == 2, "Split must yield two parts when prefix is present"
         assert parts[1] == "/api/health"
@@ -84,13 +84,13 @@ class TestGunicornScriptNameSplitting:
     def test_split_succeeds_for_all_known_paths(self):
         """Verify the split works for every path the app serves."""
         paths = [
-            "/cklabScheduler/",
-            "/cklabScheduler/api/health",
-            "/cklabScheduler/api/meetings",
-            "/cklabScheduler/api/endpoints",
-            "/cklabScheduler/api/config",
-            "/cklabScheduler/static/app.js",
-            "/cklabScheduler/static/styles.css",
+            "/sbalkcScheduler/",
+            "/sbalkcScheduler/api/health",
+            "/sbalkcScheduler/api/meetings",
+            "/sbalkcScheduler/api/endpoints",
+            "/sbalkcScheduler/api/config",
+            "/sbalkcScheduler/static/app.js",
+            "/sbalkcScheduler/static/styles.css",
         ]
         for full_path in paths:
             parts = full_path.split(SCRIPT_NAME, 1)
@@ -108,10 +108,10 @@ class TestFlaskRoutingWithScriptName:
     stripped SCRIPT_NAME from PATH_INFO.  Flask must route correctly.
 
     The test client call:
-        client.get('/api/health', environ_overrides={'SCRIPT_NAME': '/cklabScheduler'})
+        client.get('/api/health', environ_overrides={'SCRIPT_NAME': '/sbalkcScheduler'})
     sets:
         PATH_INFO   = /api/health          (the path we request)
-        SCRIPT_NAME = /cklabScheduler      (what Gunicorn sets after stripping)
+        SCRIPT_NAME = /sbalkcScheduler      (what Gunicorn sets after stripping)
     which is exactly what Flask receives in the corrected architecture.
     """
 
@@ -196,8 +196,8 @@ class TestScriptNamePropagation:
     def test_app_root_in_rendered_html(self, test_db):
         """
         The index.html template renders:
-            <meta name="app-root" content="/cklabScheduler" />
-        When SCRIPT_NAME=/cklabScheduler, this must appear in the <head> so that
+            <meta name="app-root" content="/sbalkcScheduler" />
+        When SCRIPT_NAME=/sbalkcScheduler, this must appear in the <head> so that
         the frontend JavaScript reads APP_ROOT from the meta tag instead of an
         inline script. Requires an authenticated session to render the main page.
         """
@@ -224,7 +224,7 @@ class TestScriptNamePropagation:
     def test_static_url_for_includes_script_name(self, test_db):
         """
         url_for('static', filename='app.js') with SCRIPT_NAME set must return
-        /cklabScheduler/static/app.js so static asset links in the template are correct.
+        /sbalkcScheduler/static/app.js so static asset links in the template are correct.
         """
         from flask import url_for
         app = make_app(test_db)
@@ -238,7 +238,7 @@ class TestScriptNamePropagation:
 
     def test_health_url_for_includes_script_name(self, test_db):
         """
-        url_for for the health endpoint includes /cklabScheduler when SCRIPT_NAME is set.
+        url_for for the health endpoint includes /sbalkcScheduler when SCRIPT_NAME is set.
         """
         from flask import url_for
         app = make_app(test_db)
@@ -263,41 +263,41 @@ class TestApacheProxyPassMigration:
     without running a shell script.
 
     Detection patterns (mirrors grep -qE in upgrade.sh):
-      r3 correct: ProxyPass /cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/
-      r2 broken:  ProxyPass /cklabScheduler/ http://127.0.0.1:5080/   ← no prefix
+      r3 correct: ProxyPass /sbalkcScheduler/ http://127.0.0.1:5080/sbalkcScheduler/
+      r2 broken:  ProxyPass /sbalkcScheduler/ http://127.0.0.1:5080/   ← no prefix
 
     Sed applied when r2 detected (upgrade.sh):
-      sed '/cklabScheduler/ s|http://127.0.0.1:5080/[[:space:]]*$|http://127.0.0.1:5080/cklabScheduler/|'
+      sed '/sbalkcScheduler/ s|http://127.0.0.1:5080/[[:space:]]*$|http://127.0.0.1:5080/sbalkcScheduler/|'
     """
 
     # Representative Apache config snippets for each scenario
     R2_CONF = (
-        "    ProxyPass        /cklabScheduler/ http://127.0.0.1:5080/\n"
-        "    ProxyPassReverse /cklabScheduler/ http://127.0.0.1:5080/\n"
+        "    ProxyPass        /sbalkcScheduler/ http://127.0.0.1:5080/\n"
+        "    ProxyPassReverse /sbalkcScheduler/ http://127.0.0.1:5080/\n"
     )
     R3_CONF = (
-        "    ProxyPass        /cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/\n"
-        "    ProxyPassReverse /cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/\n"
+        "    ProxyPass        /sbalkcScheduler/ http://127.0.0.1:5080/sbalkcScheduler/\n"
+        "    ProxyPassReverse /sbalkcScheduler/ http://127.0.0.1:5080/sbalkcScheduler/\n"
     )
     # Custom target (different host/port — admin-managed, must not be touched)
     CUSTOM_CONF = (
-        "    ProxyPass        /cklabScheduler/ http://10.0.0.5:8080/\n"
-        "    ProxyPassReverse /cklabScheduler/ http://10.0.0.5:8080/\n"
+        "    ProxyPass        /sbalkcScheduler/ http://10.0.0.5:8080/\n"
+        "    ProxyPassReverse /sbalkcScheduler/ http://10.0.0.5:8080/\n"
     )
 
     @staticmethod
     def _is_r3(text):
-        """Mirror of: grep -qE 'ProxyPass.*/cklabScheduler/.*5080/cklabScheduler/'"""
+        """Mirror of: grep -qE 'ProxyPass.*/sbalkcScheduler/.*5080/sbalkcScheduler/'"""
         return bool(re.search(
-            r"ProxyPass\s+/cklabScheduler/\s+http://127\.0\.0\.1:5080/cklabScheduler/",
+            r"ProxyPass\s+/sbalkcScheduler/\s+http://127\.0\.0\.1:5080/sbalkcScheduler/",
             text,
         ))
 
     @staticmethod
     def _is_r2(text):
-        """Mirror of: grep -qE 'ProxyPass.*/cklabScheduler/.*5080/[[:space:]]*$'"""
+        """Mirror of: grep -qE 'ProxyPass.*/sbalkcScheduler/.*5080/[[:space:]]*$'"""
         return bool(re.search(
-            r"ProxyPass\s+/cklabScheduler/\s+http://127\.0\.0\.1:5080/\s*$",
+            r"ProxyPass\s+/sbalkcScheduler/\s+http://127\.0\.0\.1:5080/\s*$",
             text,
             re.MULTILINE,
         ))
@@ -306,14 +306,14 @@ class TestApacheProxyPassMigration:
     def _apply_migration(text):
         """
         Mirror of the sed in upgrade.sh:
-          /cklabScheduler/ s|http://127.0.0.1:5080/[[:space:]]*$|http://127.0.0.1:5080/cklabScheduler/|
-        Only lines that contain /cklabScheduler/ are eligible for substitution.
+          /sbalkcScheduler/ s|http://127.0.0.1:5080/[[:space:]]*$|http://127.0.0.1:5080/sbalkcScheduler/|
+        Only lines that contain /sbalkcScheduler/ are eligible for substitution.
         """
         def _fix_line(line):
-            if "/cklabScheduler/" in line:
+            if "/sbalkcScheduler/" in line:
                 return re.sub(
                     r"http://127\.0\.0\.1:5080/\s*$",
-                    "http://127.0.0.1:5080/cklabScheduler/",
+                    "http://127.0.0.1:5080/sbalkcScheduler/",
                     line,
                 )
             return line
@@ -345,7 +345,7 @@ class TestApacheProxyPassMigration:
 
     def test_migration_fixes_both_proxy_lines(self):
         migrated = self._apply_migration(self.R2_CONF)
-        assert migrated.count("http://127.0.0.1:5080/cklabScheduler/") == 2, \
+        assert migrated.count("http://127.0.0.1:5080/sbalkcScheduler/") == 2, \
             "Both ProxyPass and ProxyPassReverse lines must be updated"
 
     def test_migration_is_idempotent_on_r3(self):

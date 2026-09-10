@@ -148,13 +148,9 @@ class TestInstallerPrompts:
 class TestNoLabSpecificHostnames:
     """
     Verify that no shipped source file contains CKLab-specific infrastructure
-    hostnames.  Acceptable remaining 'cklab' occurrences are limited to:
-      - GitHub repository URL references
-      - Systemd service unit names (cklab-scheduler-*)
-      - Runtime filesystem paths (/opt/cklabScheduler, /etc/cklabScheduler, etc.)
-      - System user (cklabscheduler)
-      - Apache config filenames (cklabscheduler.conf)
-    None of those are the specific lab hostnames we're testing against.
+    hostnames.  After the complete r10 runtime rename, no cklab/cklabs runtime
+    identifiers should remain in tracked source (except GitHub repo URL
+    references which are outside this project's control).
     """
 
     # Relative path of this file — excluded from the scan so that the
@@ -219,19 +215,17 @@ class TestNoLabSpecificHostnames:
 class TestDocumentationBranding:
     """
     Verify that user-facing documentation does not contain CKLab/CKLabs product
-    branding.  Acceptable retained occurrences are:
-      - Runtime filesystem paths (/opt/cklabScheduler, /etc/cklabScheduler, etc.)
-      - Systemd unit names (cklab-scheduler-*)
-      - Service account (cklabscheduler)
-      - Apache config filename (cklabscheduler.conf)
-      - URL mount path (/cklabScheduler/)
-      - GitHub repository name/URL references
-      - Branding test guard strings (tests/test_branding.py is excluded from the scan)
-    The scan rejects the specific product-name phrases 'CKLab Scheduler' and
-    'CKLabs Scheduler' appearing as user-visible text.
+    branding.  After the complete r10 runtime rename, all runtime identifiers
+    use SBALKC naming.  The scan rejects the specific product-name phrases
+    'CKLab Scheduler' and 'CKLabs Scheduler' appearing as user-visible text.
+    tests/test_branding.py is excluded from the scan to avoid self-referential
+    false positives.
     """
 
     _SELF = pathlib.Path("tests/test_branding.py")
+    # upgrade.sh intentionally documents old CKLab paths in its Option-A
+    # migration detection block so operators know where to find their old install.
+    _UPGRADE_SH = pathlib.Path("deploy/upgrade.sh")
 
     def _doc_text(self):
         """Return concatenated text of documentation and script files, excluding this file."""
@@ -243,6 +237,8 @@ class TestDocumentationBranding:
         texts = []
         for path in result.stdout.splitlines():
             if pathlib.Path(path) == self._SELF:
+                continue
+            if pathlib.Path(path) == self._UPGRADE_SH:
                 continue
             full = REPO / path
             try:
@@ -262,3 +258,95 @@ class TestDocumentationBranding:
         combined = self._doc_text()
         assert "CKLabs Scheduler" not in combined, \
             "Found 'CKLabs Scheduler' product branding in docs — replace with 'SBALKC Scheduler'"
+
+
+# ── Comprehensive zero-CKLab runtime identifier enforcement ───────────────────
+
+class TestZeroCKLabRuntimeIdentifiers:
+    """
+    Enforce that no tracked source file contains ANY cklab/cklabs identifier
+    after the complete r10 runtime rename.
+
+    Allowed exceptions:
+      - GitHub repository URLs/names: the remote repo name was not renamed.
+        These appear only as URL strings (github.com/...) in documentation.
+
+    The test file itself (tests/test_branding.py) is excluded from the scan
+    via the same _SELF mechanism used in other test classes here.
+    """
+
+    _SELF = pathlib.Path("tests/test_branding.py")
+
+    # GitHub repo name references that legitimately remain unchanged.
+    _GITHUB_REPO = "cklabScheduler-rebuild"
+
+    # upgrade.sh documents the migration from CKLab to SBALKC and must reference
+    # the old installation paths in its detection and instruction block.
+    _UPGRADE_SH = pathlib.Path("deploy/upgrade.sh")
+
+    def _all_tracked_lines(self):
+        """Return list of (path, line_number, line_text) for all tracked source files."""
+        result = subprocess.run(
+            ["git", "ls-files"],
+            capture_output=True, text=True, cwd=REPO
+        )
+        hits = []
+        for path in result.stdout.splitlines():
+            if pathlib.Path(path) == self._SELF:
+                continue
+            # upgrade.sh intentionally documents old CKLab paths in its migration
+            # detection block so operators know where to look for their old install.
+            if pathlib.Path(path) == self._UPGRADE_SH:
+                continue
+            full = REPO / path
+            if full.suffix in (".gz", ".zip", ".db", ".sqlite", ".png",
+                               ".jpg", ".ico", ".woff", ".woff2"):
+                continue
+            try:
+                for lineno, line in enumerate(
+                    full.read_text(encoding="utf-8", errors="replace").splitlines(),
+                    start=1,
+                ):
+                    hits.append((path, lineno, line))
+            except (OSError, IsADirectoryError):
+                pass
+        return hits
+
+    def test_no_cklab_identifiers_in_tracked_source(self):
+        """After the r10 rename, zero cklab/cklabs occurrences must remain in tracked source."""
+        import re
+        pattern = re.compile(r'cklab', re.IGNORECASE)
+        violations = []
+        for path, lineno, line in self._all_tracked_lines():
+            if not pattern.search(line):
+                continue
+            # Allow only lines that reference the GitHub repository name
+            # (the remote repo was not renamed).
+            stripped = line.strip()
+            if self._GITHUB_REPO in stripped:
+                # Confirm it is a GitHub URL reference, not a runtime identifier.
+                if "github.com" in stripped or "github.com/" in stripped.lower():
+                    continue
+            violations.append(f"  {path}:{lineno}: {stripped[:120]}")
+
+        assert not violations, (
+            "Found cklab/cklabs identifiers in tracked source after r10 rename.\n"
+            "Each must be replaced with the sbalkc equivalent or justified as a\n"
+            "GitHub repository URL reference:\n"
+            + "\n".join(violations[:30])
+        )
+
+    def test_no_cklab_filenames_in_tracked_files(self):
+        """No tracked filename may contain 'cklab' after the r10 rename."""
+        result = subprocess.run(
+            ["git", "ls-files"],
+            capture_output=True, text=True, cwd=REPO
+        )
+        bad = [
+            p for p in result.stdout.splitlines()
+            if "cklab" in p.lower() and self._GITHUB_REPO not in p
+        ]
+        assert not bad, (
+            "Tracked filenames still contain 'cklab':\n"
+            + "\n".join(f"  {p}" for p in bad)
+        )

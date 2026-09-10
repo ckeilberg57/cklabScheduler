@@ -1,5 +1,5 @@
 """
-Authentication and authorization tests for cklabScheduler.
+Authentication and authorization tests for SBALKC Scheduler.
 
 Covers:
   - Local authentication (login/logout/session)
@@ -610,7 +610,7 @@ class TestDatabaseSchema:
 
 # ── 36–37. Mount-path regression ─────────────────────────────────────────────
 
-SCRIPT_NAME = "/cklabScheduler"
+SCRIPT_NAME = "/sbalkcScheduler"
 
 
 class TestMountPathAuth:

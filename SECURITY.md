@@ -65,7 +65,7 @@ Flask-WTF (`CSRFProtect`) is applied globally. All state-changing requests must 
 
 ## Credential storage
 
-All runtime secrets are stored in `/etc/cklabScheduler/cklabScheduler.env`.
+All runtime secrets are stored in `/etc/sbalkcScheduler/sbalkcScheduler.env`.
 
 | Setting | Notes |
 |---|---|
@@ -74,7 +74,7 @@ All runtime secrets are stored in `/etc/cklabScheduler/cklabScheduler.env`.
 | `O365_CLIENT_SECRET` | Azure AD client secret for Microsoft 365 integration |
 | `ENTRA_CLIENT_SECRET` | Microsoft Entra client secret (when Entra auth is enabled) |
 
-**File permissions:** `640 root:cklabscheduler` — readable only by root and the `cklabscheduler` service account.
+**File permissions:** `640 root:sbalkcscheduler` — readable only by root and the `sbalkcscheduler` service account.
 
 **`SECRET_KEY` generation:** The installer generates this value with `openssl rand -hex 32` and writes it directly to the env file. It is never echoed to the terminal and is never prompted from the operator.
 
@@ -86,8 +86,8 @@ All runtime secrets are stored in `/etc/cklabScheduler/cklabScheduler.env`.
 
 Authentication events are written to two destinations:
 
-1. **Python logger** (`app.auth`): appears in `journalctl -u cklab-scheduler-web`.
-2. **`auth_audit_log` SQLite table**: persists across restarts; queryable via `sqlite3 /var/lib/cklabScheduler/scheduler.db`.
+1. **Python logger** (`app.auth`): appears in `journalctl -u sbalkc-scheduler-web`.
+2. **`auth_audit_log` SQLite table**: persists across restarts; queryable via `sqlite3 /var/lib/sbalkcScheduler/scheduler.db`.
 
 Events logged: login success, login failure, logout, account disabled, invalid password, Entra auth success/failure, role assignment changes.
 
@@ -97,10 +97,10 @@ Events logged: login success, login failure, logout, account disabled, invalid p
 
 ## Service account
 
-The application runs as a dedicated, login-disabled service account (`cklabscheduler`, shell `/usr/sbin/nologin`). This account:
-- owns the database directory (`/var/lib/cklabScheduler/`, mode 750)
-- has read access to the application directory (`/opt/cklabScheduler/`, root:cklabscheduler 750)
-- has read access to the configuration file (`/etc/cklabScheduler/cklabScheduler.env`, mode 640)
+The application runs as a dedicated, login-disabled service account (`sbalkcscheduler`, shell `/usr/sbin/nologin`). This account:
+- owns the database directory (`/var/lib/sbalkcScheduler/`, mode 750)
+- has read access to the application directory (`/opt/sbalkcScheduler/`, root:sbalkcscheduler 750)
+- has read access to the configuration file (`/etc/sbalkcScheduler/sbalkcScheduler.env`, mode 640)
 
 The web and worker processes run as this account under systemd.
 
@@ -110,7 +110,7 @@ The web and worker processes run as this account under systemd.
 
 **Gunicorn listens on `127.0.0.1:5080` only.** It is not accessible from the network directly.
 
-**Apache terminates TLS** and reverse-proxies `/cklabScheduler/` to Gunicorn. All external traffic goes through Apache, which enforces HTTPS.
+**Apache terminates TLS** and reverse-proxies `/sbalkcScheduler/` to Gunicorn. All external traffic goes through Apache, which enforces HTTPS.
 
 The installer supports:
 - Let's Encrypt (certbot) for public-facing deployments
@@ -148,7 +148,7 @@ The `O365_CLIENT_SECRET` is stored in the env file with `640` permissions and is
 ## What must never be committed to version control
 
 - Real `.env` files or any file containing live credentials
-- The `cklabScheduler.env` configuration file from any deployment
+- The `sbalkcScheduler.env` configuration file from any deployment
 - Private TLS key files (`*.key`, `*.pem`, `*.p12`)
 - SQLite database files (`*.db`)
 - Old monolithic `app.py` from the original build if it contains hardcoded credentials

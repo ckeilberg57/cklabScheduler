@@ -27,19 +27,19 @@ Browser
    |
  HTTPS (TLS terminated at Apache)
    |
-Apache  (/cklabScheduler/ → http://127.0.0.1:5080/cklabScheduler/)
+Apache  (/sbalkcScheduler/ → http://127.0.0.1:5080/sbalkcScheduler/)
    |
-Gunicorn  (SCRIPT_NAME=/cklabScheduler, workers=2)
+Gunicorn  (SCRIPT_NAME=/sbalkcScheduler, workers=2)
    |
 Flask application  (Blueprint routes under /api/ and /)
    |
-SQLite  (/var/lib/cklabScheduler/scheduler.db)
+SQLite  (/var/lib/sbalkcScheduler/scheduler.db)
 ```
 
 ### Scheduler worker (separate process)
 
 ```
-cklab-scheduler-worker  (systemd unit)
+sbalkc-scheduler-worker  (systemd unit)
       |
       +-- APScheduler (BackgroundScheduler, 10-second tick)
       |       |
@@ -69,7 +69,7 @@ Gunicorn spawns multiple worker processes. If APScheduler ran inside Gunicorn, e
 ## Application directory layout (installed)
 
 ```
-/opt/cklabScheduler/            root:cklabscheduler 750  — application code
+/opt/sbalkcScheduler/            root:sbalkcscheduler 750  — application code
 ├── app/
 │   ├── __init__.py             Flask factory (create_app)
 │   ├── config.py               Settings class, per-process startup validation
@@ -93,18 +93,18 @@ Gunicorn spawns multiple worker processes. If APScheduler ran inside Gunicorn, e
 ├── worker.py                   Standalone scheduler process entry point
 └── requirements.txt
 
-/etc/cklabScheduler/            root:cklabscheduler 750
-└── cklabScheduler.env          root:cklabscheduler 640  — runtime configuration
+/etc/sbalkcScheduler/            root:sbalkcscheduler 750
+└── sbalkcScheduler.env          root:sbalkcscheduler 640  — runtime configuration
 
-/var/lib/cklabScheduler/        cklabscheduler:cklabscheduler 750
+/var/lib/sbalkcScheduler/        sbalkcscheduler:sbalkcscheduler 750
 └── scheduler.db                SQLite database (WAL mode)
 
 /etc/systemd/system/
-├── cklab-scheduler-web.service
-└── cklab-scheduler-worker.service
+├── sbalkc-scheduler-web.service
+└── sbalkc-scheduler-worker.service
 
 /etc/apache2/sites-available/
-└── cklabscheduler.conf
+└── sbalkcscheduler.conf
 ```
 
 ---
@@ -121,21 +121,21 @@ Enabled by default. User records are stored in the SQLite database with PBKDF2-S
 
 ```bash
 # List all local users
-sudo /opt/cklabScheduler/venv/bin/python -m app.manage_users list
+sudo /opt/sbalkcScheduler/venv/bin/python -m app.manage_users list
 
 # Create a new user
-sudo /opt/cklabScheduler/venv/bin/python -m app.manage_users create \
+sudo /opt/sbalkcScheduler/venv/bin/python -m app.manage_users create \
      --username alice --role scheduler_user
 
 # Reset a password
-sudo /opt/cklabScheduler/venv/bin/python -m app.manage_users reset-password --username alice
+sudo /opt/sbalkcScheduler/venv/bin/python -m app.manage_users reset-password --username alice
 
 # Disable / re-enable a user
-sudo /opt/cklabScheduler/venv/bin/python -m app.manage_users disable --username alice
-sudo /opt/cklabScheduler/venv/bin/python -m app.manage_users enable  --username alice
+sudo /opt/sbalkcScheduler/venv/bin/python -m app.manage_users disable --username alice
+sudo /opt/sbalkcScheduler/venv/bin/python -m app.manage_users enable  --username alice
 
 # Change a user's role
-sudo /opt/cklabScheduler/venv/bin/python -m app.manage_users change-role \
+sudo /opt/sbalkcScheduler/venv/bin/python -m app.manage_users change-role \
      --username alice --role administrator
 ```
 
@@ -161,7 +161,7 @@ See [docs/ENTRA_AUTHENTICATION.md](docs/ENTRA_AUTHENTICATION.md) for the full Az
 
 ## Configuration
 
-All runtime configuration lives in `/etc/cklabScheduler/cklabScheduler.env`. During installation, `deploy/install.sh` prompts for each value and writes the file. See `.env.example` for documentation of every supported variable.
+All runtime configuration lives in `/etc/sbalkcScheduler/sbalkcScheduler.env`. During installation, `deploy/install.sh` prompts for each value and writes the file. See `.env.example` for documentation of every supported variable.
 
 | Variable | Description |
 |---|---|
@@ -186,7 +186,7 @@ All runtime configuration lives in `/etc/cklabScheduler/cklabScheduler.env`. Dur
 | `ENTRA_CLIENT_ID` | Entra Application (client) ID |
 | `ENTRA_CLIENT_SECRET` | Entra client secret |
 | `ENTRA_AUTHORITY` | Entra authority URL (`https://login.microsoftonline.com/<tenant-id>`) |
-| `ENTRA_REDIRECT_URI` | OAuth callback URL (e.g. `https://<host>/cklabScheduler/auth/callback`) |
+| `ENTRA_REDIRECT_URI` | OAuth callback URL (e.g. `https://<host>/sbalkcScheduler/auth/callback`) |
 | `ENTRA_POST_LOGOUT_REDIRECT_URI` | Where to redirect after Entra sign-out |
 | `O365_ENABLED` | `true`/`false` — enable Microsoft 365 email integration |
 | `O365_TENANT_ID` | Azure AD tenant ID |
@@ -222,13 +222,13 @@ bash deploy/verify_install.sh <server-hostname>
 
 The installer:
 - Installs system packages (`python3.12`, `apache2`, etc.)
-- Creates the `cklabscheduler` service account
-- Copies application files to `/opt/cklabScheduler/`
+- Creates the `sbalkcscheduler` service account
+- Copies application files to `/opt/sbalkcScheduler/`
 - Creates a Python virtual environment and installs dependencies
 - Prompts for all required configuration values (passwords are not echoed)
 - Generates `SECRET_KEY` automatically using `openssl rand -hex 32`
 - Collects authentication configuration (local admin credentials; optionally Entra ID)
-- Writes `/etc/cklabScheduler/cklabScheduler.env` (mode 640)
+- Writes `/etc/sbalkcScheduler/sbalkcScheduler.env` (mode 640)
 - Initialises the database schema (idempotent)
 - Creates the initial local admin user (password never stored in plaintext or logged)
 - Configures and enables the Apache virtual host
@@ -286,7 +286,7 @@ Checks: service account, directory permissions, env-file required keys, Python p
 Manual health check:
 
 ```bash
-curl -sk "https://<server>/cklabScheduler/api/health" | python3 -m json.tool
+curl -sk "https://<server>/sbalkcScheduler/api/health" | python3 -m json.tool
 ```
 
 ---
@@ -298,7 +298,7 @@ Tests live in the repository under `tests/` and are **not** deployed to the serv
 ```bash
 # On the Ubuntu server after installation
 cd /root/sbalkcScheduler-src
-/opt/cklabScheduler/venv/bin/python -m pytest tests/ -v
+/opt/sbalkcScheduler/venv/bin/python -m pytest tests/ -v
 ```
 
 For local development (macOS/Linux), create a virtual environment first — see `CONTRIBUTING.md`.
@@ -310,16 +310,16 @@ For local development (macOS/Linux), create a virtual environment first — see 
 **Services**
 
 ```bash
-systemctl status cklab-scheduler-web cklab-scheduler-worker
-journalctl -u cklab-scheduler-web    -f
-journalctl -u cklab-scheduler-worker -f
+systemctl status sbalkc-scheduler-web sbalkc-scheduler-worker
+journalctl -u sbalkc-scheduler-web    -f
+journalctl -u sbalkc-scheduler-worker -f
 ```
 
 **Health check failing**
 
-- Worker never started: check `journalctl -u cklab-scheduler-worker`
+- Worker never started: check `journalctl -u sbalkc-scheduler-worker`
 - Stale heartbeat: the worker crashed; restart it and check logs
-- Database inaccessible: check ownership of `/var/lib/cklabScheduler/scheduler.db`
+- Database inaccessible: check ownership of `/var/lib/sbalkcScheduler/scheduler.db`
 
 **Endpoint list empty**
 
@@ -335,9 +335,9 @@ journalctl -u cklab-scheduler-worker -f
 
 **Apache 500 on all requests**
 
-- Confirm ProxyPass target includes the path prefix: `http://127.0.0.1:5080/cklabScheduler/`
-- Test Gunicorn directly: `curl -s http://127.0.0.1:5080/cklabScheduler/api/health`
-- Check `SCRIPT_NAME=/cklabScheduler` is set in the web service unit file
+- Confirm ProxyPass target includes the path prefix: `http://127.0.0.1:5080/sbalkcScheduler/`
+- Test Gunicorn directly: `curl -s http://127.0.0.1:5080/sbalkcScheduler/api/health`
+- Check `SCRIPT_NAME=/sbalkcScheduler` is set in the web service unit file
 
 ---
 

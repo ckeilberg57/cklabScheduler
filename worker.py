@@ -20,7 +20,7 @@ logging.basicConfig(
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
     stream=sys.stdout,
 )
-logger = logging.getLogger("cklab.worker")
+logger = logging.getLogger("sbalkc.worker")
 
 
 def main():

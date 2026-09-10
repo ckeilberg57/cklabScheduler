@@ -4,16 +4,16 @@ After=network.target
 
 [Service]
 Type=simple
-User=cklabscheduler
-Group=cklabscheduler
-WorkingDirectory=/opt/cklabScheduler
-EnvironmentFile=/etc/cklabScheduler/cklabScheduler.env
-ExecStart=/opt/cklabScheduler/venv/bin/gunicorn \
+User=sbalkcscheduler
+Group=sbalkcscheduler
+WorkingDirectory=/opt/sbalkcScheduler
+EnvironmentFile=/etc/sbalkcScheduler/sbalkcScheduler.env
+ExecStart=/opt/sbalkcScheduler/venv/bin/gunicorn \
     --bind 127.0.0.1:5080 \
     --workers 2 \
     --threads 4 \
     --worker-class gthread \
-    --env SCRIPT_NAME=/cklabScheduler \
+    --env SCRIPT_NAME=/sbalkcScheduler \
     --access-logfile - \
     --error-logfile - \
     wsgi:application
@@ -21,7 +21,7 @@ Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=cklab-scheduler-web
+SyslogIdentifier=sbalkc-scheduler-web
 
 [Install]
 WantedBy=multi-user.target

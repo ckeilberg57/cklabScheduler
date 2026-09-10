@@ -5,12 +5,12 @@
 set -euo pipefail
 
 # ── Constants ────────────────────────────────────────────────────────────────
-APP_DIR="/opt/cklabScheduler"
-CONF_DIR="/etc/cklabScheduler"
-DATA_DIR="/var/lib/cklabScheduler"
-SVC_USER="cklabscheduler"
-WEB_SVC="cklab-scheduler-web"
-WORKER_SVC="cklab-scheduler-worker"
+APP_DIR="/opt/sbalkcScheduler"
+CONF_DIR="/etc/sbalkcScheduler"
+DATA_DIR="/var/lib/sbalkcScheduler"
+SVC_USER="sbalkcscheduler"
+WEB_SVC="sbalkc-scheduler-web"
+WORKER_SVC="sbalkc-scheduler-worker"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 die()  { echo; echo "FATAL: $*" >&2; exit 1; }
@@ -48,16 +48,16 @@ systemctl disable "${WORKER_SVC}" 2>/dev/null || true
 
 # ── 3. Remove systemd unit files ──────────────────────────────────────────────
 info "Removing systemd unit files"
-rm -f /etc/systemd/system/cklab-scheduler-web.service
-rm -f /etc/systemd/system/cklab-scheduler-worker.service
+rm -f /etc/systemd/system/sbalkc-scheduler-web.service
+rm -f /etc/systemd/system/sbalkc-scheduler-worker.service
 systemctl daemon-reload
 echo "  Unit files removed."
 removed+=("systemd units")
 
 # ── 4. Remove Apache configuration ───────────────────────────────────────────
 info "Removing Apache configuration"
-a2dissite cklabscheduler 2>/dev/null || true
-rm -f /etc/apache2/sites-available/cklabscheduler.conf
+a2dissite sbalkcscheduler 2>/dev/null || true
+rm -f /etc/apache2/sites-available/sbalkcscheduler.conf
 systemctl reload apache2 2>/dev/null || true
 echo "  Apache site configuration removed."
 removed+=("Apache vhost config")

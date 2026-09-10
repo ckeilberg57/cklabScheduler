@@ -14,17 +14,17 @@
 set -uo pipefail
 
 # ── Constants ────────────────────────────────────────────────────────────────
-APP_DIR="/opt/cklabScheduler"
-CONF_DIR="/etc/cklabScheduler"
-DATA_DIR="/var/lib/cklabScheduler"
-ENV_FILE="${CONF_DIR}/cklabScheduler.env"
+APP_DIR="/opt/sbalkcScheduler"
+CONF_DIR="/etc/sbalkcScheduler"
+DATA_DIR="/var/lib/sbalkcScheduler"
+ENV_FILE="${CONF_DIR}/sbalkcScheduler.env"
 DB_PATH="${DATA_DIR}/scheduler.db"
 VENV="${APP_DIR}/venv"
-SVC_USER="cklabscheduler"
-WEB_SVC="cklab-scheduler-web"
-WORKER_SVC="cklab-scheduler-worker"
+SVC_USER="sbalkcscheduler"
+WEB_SVC="sbalkc-scheduler-web"
+WORKER_SVC="sbalkc-scheduler-worker"
 HOSTNAME_ARG="${1:-localhost}"
-HEALTH_URL="https://${HOSTNAME_ARG}/cklabScheduler/api/health"
+HEALTH_URL="https://${HOSTNAME_ARG}/sbalkcScheduler/api/health"
 
 # ── Counters and helpers ─────────────────────────────────────────────────────
 PASS=0
@@ -265,10 +265,10 @@ for svc in "${WEB_SVC}" "${WORKER_SVC}"; do
 done
 
 # Verify SCRIPT_NAME is set in the web unit file
-if grep -q 'SCRIPT_NAME=/cklabScheduler' /etc/systemd/system/${WEB_SVC}.service 2>/dev/null; then
-    ok "SCRIPT_NAME=/cklabScheduler in web unit"
+if grep -q 'SCRIPT_NAME=/sbalkcScheduler' /etc/systemd/system/${WEB_SVC}.service 2>/dev/null; then
+    ok "SCRIPT_NAME=/sbalkcScheduler in web unit"
 else
-    fail "SCRIPT_NAME=/cklabScheduler missing from web unit"
+    fail "SCRIPT_NAME=/sbalkcScheduler missing from web unit"
 fi
 
 # Verify EnvironmentFile path is correct
@@ -301,32 +301,32 @@ else
 fi
 
 # Site enabled (symlink check — works without root)
-if [[ -L /etc/apache2/sites-enabled/cklabscheduler.conf ]]; then
-    ok "cklabscheduler site: enabled"
+if [[ -L /etc/apache2/sites-enabled/sbalkcscheduler.conf ]]; then
+    ok "sbalkcscheduler site: enabled"
 else
-    fail "cklabscheduler site: not enabled in sites-enabled/"
+    fail "sbalkcscheduler site: not enabled in sites-enabled/"
 fi
 
 # Config file present
-chk "Apache config file exists" test -f /etc/apache2/sites-available/cklabscheduler.conf
+chk "Apache config file exists" test -f /etc/apache2/sites-available/sbalkcscheduler.conf
 
 # Spot-check critical directives in the installed config
-APACHE_CONF=/etc/apache2/sites-available/cklabscheduler.conf
+APACHE_CONF=/etc/apache2/sites-available/sbalkcscheduler.conf
 if [[ -f "${APACHE_CONF}" ]]; then
-    if grep -q 'ProxyPass .*/cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/' "${APACHE_CONF}" 2>/dev/null; then
-        ok "ProxyPass /cklabScheduler/ → 127.0.0.1:5080/cklabScheduler/ (prefix preserved)"
+    if grep -q 'ProxyPass .*/sbalkcScheduler/ http://127.0.0.1:5080/sbalkcScheduler/' "${APACHE_CONF}" 2>/dev/null; then
+        ok "ProxyPass /sbalkcScheduler/ → 127.0.0.1:5080/sbalkcScheduler/ (prefix preserved)"
     else
-        fail "ProxyPass target must be http://127.0.0.1:5080/cklabScheduler/ (prefix preservation required for Gunicorn SCRIPT_NAME)"
+        fail "ProxyPass target must be http://127.0.0.1:5080/sbalkcScheduler/ (prefix preservation required for Gunicorn SCRIPT_NAME)"
     fi
-    if grep -q 'ProxyPassReverse.*/cklabScheduler/' "${APACHE_CONF}" 2>/dev/null; then
-        ok "ProxyPassReverse /cklabScheduler/ present"
+    if grep -q 'ProxyPassReverse.*/sbalkcScheduler/' "${APACHE_CONF}" 2>/dev/null; then
+        ok "ProxyPassReverse /sbalkcScheduler/ present"
     else
         fail "ProxyPassReverse missing from Apache config"
     fi
-    if grep -qE 'RedirectMatch.*\^/cklabScheduler\$' "${APACHE_CONF}" 2>/dev/null; then
+    if grep -qE 'RedirectMatch.*\^/sbalkcScheduler\$' "${APACHE_CONF}" 2>/dev/null; then
         ok "RedirectMatch anchored redirect present"
     else
-        fail "RedirectMatch ^/cklabScheduler$ missing from Apache config"
+        fail "RedirectMatch ^/sbalkcScheduler$ missing from Apache config"
     fi
     if grep -q 'ProxyPreserveHost On' "${APACHE_CONF}" 2>/dev/null; then
         ok "ProxyPreserveHost On present"
@@ -579,7 +579,7 @@ else
 fi
 
 # ── Authentication route checks (via Apache) ────────────────────────────────
-BASE_URL="https://${HOSTNAME_ARG}/cklabScheduler"
+BASE_URL="https://${HOSTNAME_ARG}/sbalkcScheduler"
 
 # Login page must be publicly accessible (200)
 LOGIN_CODE="$(curl --silent --insecure --max-time 10 \

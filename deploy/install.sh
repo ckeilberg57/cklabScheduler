@@ -5,17 +5,17 @@
 set -euo pipefail
 
 # ── Constants ────────────────────────────────────────────────────────────────
-APP_DIR="/opt/cklabScheduler"
-CONF_DIR="/etc/cklabScheduler"
-DATA_DIR="/var/lib/cklabScheduler"
-ENV_FILE="${CONF_DIR}/cklabScheduler.env"
+APP_DIR="/opt/sbalkcScheduler"
+CONF_DIR="/etc/sbalkcScheduler"
+DATA_DIR="/var/lib/sbalkcScheduler"
+ENV_FILE="${CONF_DIR}/sbalkcScheduler.env"
 DB_PATH="${DATA_DIR}/scheduler.db"
 VENV="${APP_DIR}/venv"
-SVC_USER="cklabscheduler"
-WEB_SVC="cklab-scheduler-web"
-WORKER_SVC="cklab-scheduler-worker"
-CERT_FILE="/etc/ssl/certs/cklabscheduler.crt"
-KEY_FILE="/etc/ssl/private/cklabscheduler.key"
+SVC_USER="sbalkcscheduler"
+WEB_SVC="sbalkc-scheduler-web"
+WORKER_SVC="sbalkc-scheduler-worker"
+CERT_FILE="/etc/ssl/certs/sbalkcscheduler.crt"
+KEY_FILE="/etc/ssl/private/sbalkcscheduler.key"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -112,7 +112,7 @@ if [[ -z "${STY:-}" && -z "${TMUX:-}" ]]; then
     printf '\n\033[33mTIP:\033[0m This installation takes several minutes and will prompt for\n'
     printf '    Pexip credentials.  To protect against SSH disconnects, consider\n'
     printf '    running inside screen or tmux:\n'
-    printf '      screen -S cklabinstall   (then re-run this script inside screen)\n\n'
+    printf '      screen -S sbalkcinstall   (then re-run this script inside screen)\n\n'
 fi
 
 # ── 1. Pre-flight ────────────────────────────────────────────────────────────
@@ -392,9 +392,9 @@ if prompt_yesno "Enable Microsoft Entra ID (Azure AD) authentication?" "N"; then
     ENTRA_TENANT_ID_VAL="$(prompt_required "Entra Tenant ID (from Azure portal)")"
     ENTRA_CLIENT_ID_VAL="$(prompt_required  "Entra Application (Client) ID")"
     ENTRA_CLIENT_SECRET_VAL="$(prompt_secret "Entra Client Secret [hidden]")"
-    _ENTRA_DEFAULT_REDIRECT="https://${SERVER_HOSTNAME}/cklabScheduler/auth/callback"
+    _ENTRA_DEFAULT_REDIRECT="https://${SERVER_HOSTNAME}/sbalkcScheduler/auth/callback"
     ENTRA_REDIRECT_URI_VAL="$(prompt_default "Entra redirect URI" "${_ENTRA_DEFAULT_REDIRECT}")"
-    _ENTRA_DEFAULT_POST_LOGOUT="https://${SERVER_HOSTNAME}/cklabScheduler/login"
+    _ENTRA_DEFAULT_POST_LOGOUT="https://${SERVER_HOSTNAME}/sbalkcScheduler/login"
     ENTRA_POST_LOGOUT_REDIRECT_URI_VAL="$(prompt_default "Post-logout redirect URI" "${_ENTRA_DEFAULT_POST_LOGOUT}")"
 
     echo
@@ -519,14 +519,14 @@ unset ADMIN_PASS ADMIN_USER
 
 # ── 13. Systemd unit files ───────────────────────────────────────────────────
 info "Installing systemd unit files"
-cp "${SCRIPT_DIR}/cklab-scheduler-web.service"    /etc/systemd/system/
-cp "${SCRIPT_DIR}/cklab-scheduler-worker.service" /etc/systemd/system/
+cp "${SCRIPT_DIR}/sbalkc-scheduler-web.service"    /etc/systemd/system/
+cp "${SCRIPT_DIR}/sbalkc-scheduler-worker.service" /etc/systemd/system/
 systemctl daemon-reload
 echo "  Unit files installed and daemon reloaded."
 
 # ── 14. Apache virtual host ───────────────────────────────────────────────────
 info "Configuring Apache virtual host"
-cat > /etc/apache2/sites-available/cklabscheduler.conf <<APACHECONF
+cat > /etc/apache2/sites-available/sbalkcscheduler.conf <<APACHECONF
 # SBALKC Scheduler Apache virtual host
 # Written by deploy/install.sh — edit and re-run install.sh or edit directly.
 
@@ -543,34 +543,34 @@ cat > /etc/apache2/sites-available/cklabscheduler.conf <<APACHECONF
     SSLCertificateFile    ${CERT_FILE}
     SSLCertificateKeyFile ${KEY_FILE}
 
-    # Exact redirect: /cklabScheduler → /cklabScheduler/
-    RedirectMatch permanent ^/cklabScheduler$ /cklabScheduler/
+    # Exact redirect: /sbalkcScheduler → /sbalkcScheduler/
+    RedirectMatch permanent ^/sbalkcScheduler$ /sbalkcScheduler/
 
-    # Reverse proxy to Gunicorn.  The /cklabScheduler/ prefix is preserved on
+    # Reverse proxy to Gunicorn.  The /sbalkcScheduler/ prefix is preserved on
     # both sides so Gunicorn's SCRIPT_NAME processing can split the path correctly.
     #
     # Request flow:
-    #   Browser   GET /cklabScheduler/api/health
-    #   Apache    forwards /cklabScheduler/api/health to http://127.0.0.1:5080/cklabScheduler/api/health
-    #   Gunicorn  SCRIPT_NAME=/cklabScheduler → strips prefix → PATH_INFO=/api/health
-    #   Flask     routes /api/health; request.script_root=/cklabScheduler
+    #   Browser   GET /sbalkcScheduler/api/health
+    #   Apache    forwards /sbalkcScheduler/api/health to http://127.0.0.1:5080/sbalkcScheduler/api/health
+    #   Gunicorn  SCRIPT_NAME=/sbalkcScheduler → strips prefix → PATH_INFO=/api/health
+    #   Flask     routes /api/health; request.script_root=/sbalkcScheduler
     #
     # DO NOT change this to http://127.0.0.1:5080/ — that strips the prefix and
     # causes Gunicorn IndexError in http/wsgi.py.
     ProxyPreserveHost On
-    ProxyPass        /cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/
-    ProxyPassReverse /cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/
+    ProxyPass        /sbalkcScheduler/ http://127.0.0.1:5080/sbalkcScheduler/
+    ProxyPassReverse /sbalkcScheduler/ http://127.0.0.1:5080/sbalkcScheduler/
 
     RequestHeader set X-Forwarded-Proto "https"
 
-    ErrorLog  \${APACHE_LOG_DIR}/cklabscheduler_error.log
-    CustomLog \${APACHE_LOG_DIR}/cklabscheduler_access.log combined
+    ErrorLog  \${APACHE_LOG_DIR}/sbalkcscheduler_error.log
+    CustomLog \${APACHE_LOG_DIR}/sbalkcscheduler_access.log combined
 </VirtualHost>
 APACHECONF
 
-a2ensite cklabscheduler
+a2ensite sbalkcscheduler
 apache2ctl configtest \
-    || die "Apache config test failed — check /etc/apache2/sites-available/cklabscheduler.conf"
+    || die "Apache config test failed — check /etc/apache2/sites-available/sbalkcscheduler.conf"
 systemctl reload apache2
 echo "  Apache configured for ${SERVER_HOSTNAME}."
 
@@ -615,14 +615,14 @@ echo "  Waiting for services to initialise..."
 sleep 5
 
 HEALTH_JSON="$(curl --silent --insecure --max-time 15 \
-    "https://localhost/cklabScheduler/api/health" || echo '{}')"
+    "https://localhost/sbalkcScheduler/api/health" || echo '{}')"
 
 if printf '%s' "${HEALTH_JSON}" | grep -q '"ok": *true'; then
     echo
     echo "  ✓ Installation complete."
     echo
-    echo "  Application URL : https://${SERVER_HOSTNAME}/cklabScheduler/"
-    echo "  Health endpoint : https://${SERVER_HOSTNAME}/cklabScheduler/api/health"
+    echo "  Application URL : https://${SERVER_HOSTNAME}/sbalkcScheduler/"
+    echo "  Health endpoint : https://${SERVER_HOSTNAME}/sbalkcScheduler/api/health"
     if [[ "${LOCAL_AUTH_ENABLED_VAL}" == "true" ]]; then
         echo "  Sign in with the local admin account created during installation."
     else

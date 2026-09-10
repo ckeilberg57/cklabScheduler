@@ -29,7 +29,7 @@ meeting lifecycle tests without a live Pexip system.
 On your local machine (where the repository lives):
 
 ```bash
-cd /path/to/cklabScheduler-rebuild
+cd /path/to/sbalkcScheduler-rebuild
 
 # Create a clean archive — excludes venv, databases, and dev artifacts
 tar --create --gzip \
@@ -42,27 +42,27 @@ tar --create --gzip \
     --exclude='.env.original' \
     --exclude='.DS_Store' \
     --exclude='.pytest_cache' \
-    --file=/tmp/cklabScheduler.tar.gz \
+    --file=/tmp/sbalkcScheduler.tar.gz \
     .
 ```
 
 ### 3.0.2 Copy the archive to the server
 
 ```bash
-scp /tmp/cklabScheduler.tar.gz <SERVER>:/tmp/
+scp /tmp/sbalkcScheduler.tar.gz <SERVER>:/tmp/
 ```
 
 ### 3.0.3 Extract on the server
 
 ```bash
 ssh root@<SERVER>
-mkdir -p /root/cklabScheduler-src
-tar -xzf /tmp/cklabScheduler.tar.gz -C /root/cklabScheduler-src
-ls /root/cklabScheduler-src/deploy/
+mkdir -p /root/sbalkcScheduler-src
+tar -xzf /tmp/sbalkcScheduler.tar.gz -C /root/sbalkcScheduler-src
+ls /root/sbalkcScheduler-src/deploy/
 ```
 
 **Expected:** `install.sh  upgrade.sh  uninstall.sh  verify_install.sh  TEST_PLAN.md
-cklab-scheduler-web.service  cklab-scheduler-worker.service  cklabscheduler.conf`
+sbalkc-scheduler-web.service  sbalkc-scheduler-worker.service  sbalkcscheduler.conf`
 
 ---
 
@@ -71,7 +71,7 @@ cklab-scheduler-web.service  cklab-scheduler-worker.service  cklabscheduler.conf
 ### 3.1.1 Run the installer
 
 ```bash
-cd /root/cklabScheduler-src
+cd /root/sbalkcScheduler-src
 bash deploy/install.sh
 ```
 
@@ -109,8 +109,8 @@ The installer should complete without errors and print:
 
   ✓ Installation complete.
 
-  Application URL : https://<SERVER>/cklabScheduler/
-  Health endpoint : https://<SERVER>/cklabScheduler/api/health
+  Application URL : https://<SERVER>/sbalkcScheduler/
+  Health endpoint : https://<SERVER>/sbalkcScheduler/api/health
 ```
 
 **Pass criterion:** No `FATAL:` lines. Health check reports `✓ Installation complete.`
@@ -122,21 +122,21 @@ The installer should complete without errors and print:
 Run `verify_install.sh` immediately after installation:
 
 ```bash
-sudo bash /root/cklabScheduler-src/deploy/verify_install.sh <SERVER>
+sudo bash /root/sbalkcScheduler-src/deploy/verify_install.sh <SERVER>
 ```
 
 **Expected output:** All checks `✓`, final line `ALL CHECKS PASSED`, exit code 0.
 
 The script validates:
 - Ubuntu 24.04 platform
-- Service account (`cklabscheduler`, nologin shell)
+- Service account (`sbalkcscheduler`, nologin shell)
 - Directory existence, ownership, and permissions
 - Configuration file permissions (640) and required keys
 - Application files present; dev artifacts absent
 - Python venv with all five packages
 - Both systemd services active and enabled
 - Port 5080 bound to 127.0.0.1
-- Apache: site enabled, ProxyPass with prefix preserved (`/cklabScheduler/ → :5080/cklabScheduler/`), RedirectMatch, modules
+- Apache: site enabled, ProxyPass with prefix preserved (`/sbalkcScheduler/ → :5080/sbalkcScheduler/`), RedirectMatch, modules
 - Health endpoint returns HTTP 200 with `ok=true`
 - SQLite: WAL mode, four tables, fresh heartbeat
 
@@ -148,10 +148,10 @@ The script validates:
 
 ### 3.3.1 Load the application in a browser
 
-Navigate to `https://<SERVER>/cklabScheduler/`
+Navigate to `https://<SERVER>/sbalkcScheduler/`
 
 **Expected:**
-- Browser follows redirect from `/cklabScheduler` to `/cklabScheduler/`
+- Browser follows redirect from `/sbalkcScheduler` to `/sbalkcScheduler/`
 - TLS warning appears (expected for self-signed cert)
 - Scheduler UI loads with the meeting calendar
 
@@ -161,33 +161,33 @@ Navigate to `https://<SERVER>/cklabScheduler/`
 
 ```bash
 curl -sk -o /dev/null -w '%{http_code} %{redirect_url}\n' \
-    "https://<SERVER>/cklabScheduler"
+    "https://<SERVER>/sbalkcScheduler"
 ```
 
-**Expected:** `301 https://<SERVER>/cklabScheduler/`
+**Expected:** `301 https://<SERVER>/sbalkcScheduler/`
 
 ### 3.3.3 Health endpoint
 
 > **Architecture note — ProxyPass prefix preservation (r3 fix)**
 >
-> Apache forwards `/cklabScheduler/...` to `http://127.0.0.1:5080/cklabScheduler/...`
-> (prefix preserved). Gunicorn's `--env SCRIPT_NAME=/cklabScheduler` strips the prefix
+> Apache forwards `/sbalkcScheduler/...` to `http://127.0.0.1:5080/sbalkcScheduler/...`
+> (prefix preserved). Gunicorn's `--env SCRIPT_NAME=/sbalkcScheduler` strips the prefix
 > before Flask sees the request. If the backend URL were `http://127.0.0.1:5080/` instead,
-> Gunicorn would receive `/api/health` without the prefix, fail to split on `/cklabScheduler`,
+> Gunicorn would receive `/api/health` without the prefix, fail to split on `/sbalkcScheduler`,
 > and return HTTP 500 (IndexError in gunicorn/http/wsgi.py) before Flask is reached.
 >
 > **Regression check** — both of these must succeed:
 > ```bash
 > # Through Apache (browser-style path)
-> curl -sk "https://<SERVER>/cklabScheduler/api/health" | python3 -m json.tool
+> curl -sk "https://<SERVER>/sbalkcScheduler/api/health" | python3 -m json.tool
 > # Direct to Gunicorn using the preserved path (as Apache forwards it)
-> curl -s  "http://127.0.0.1:5080/cklabScheduler/api/health"
+> curl -s  "http://127.0.0.1:5080/sbalkcScheduler/api/health"
 > ```
 > The second curl must also return valid JSON, not a 500. If it returns 500, the
-> `deploy/cklab-scheduler-web.service` `SCRIPT_NAME` or the Apache ProxyPass is misconfigured.
+> `deploy/sbalkc-scheduler-web.service` `SCRIPT_NAME` or the Apache ProxyPass is misconfigured.
 
 ```bash
-curl -sk "https://<SERVER>/cklabScheduler/api/health" | python3 -m json.tool
+curl -sk "https://<SERVER>/sbalkcScheduler/api/health" | python3 -m json.tool
 ```
 
 **Expected:**
@@ -195,7 +195,7 @@ curl -sk "https://<SERVER>/cklabScheduler/api/health" | python3 -m json.tool
 ```json
 {
     "ok": true,
-    "service": "cklabScheduler",
+    "service": "sbalkcScheduler",
     "version": "2.0.0",
     "database": { "ok": true, "meeting_count": 0 },
     "pexip": { "configured": true },
@@ -213,7 +213,7 @@ curl -sk "https://<SERVER>/cklabScheduler/api/health" | python3 -m json.tool
 ### 3.3.4 Endpoint registration listing
 
 ```bash
-curl -sk "https://<SERVER>/cklabScheduler/api/endpoints" | python3 -m json.tool | head -30
+curl -sk "https://<SERVER>/sbalkcScheduler/api/endpoints" | python3 -m json.tool | head -30
 ```
 
 **Expected:**
@@ -222,7 +222,7 @@ curl -sk "https://<SERVER>/cklabScheduler/api/endpoints" | python3 -m json.tool 
 - `"items"` array contains only currently-registered Pexip endpoints from `<PEXIP_MGR>`
 
 If the response is `{"ok": false, "error": "..."}`, the Management API credentials
-or `REG_STATUS_HOST` are incorrect. Check `/etc/cklabScheduler/cklabScheduler.env`
+or `REG_STATUS_HOST` are incorrect. Check `/etc/sbalkcScheduler/sbalkcScheduler.env`
 and restart the web service after correcting.
 
 **Pass criterion:** At least one endpoint appears in the list.
@@ -233,7 +233,7 @@ not currently connected (`is_registered: false`). The scheduler must filter thos
 
 ```bash
 # Count items returned
-curl -sk "https://<SERVER>/cklabScheduler/api/endpoints" \
+curl -sk "https://<SERVER>/sbalkcScheduler/api/endpoints" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); \
       print('ok:', d['ok']); print('item count:', len(d['items'])); \
       [print(' -', e['alias'], '| registered:', e.get('is_registered')) for e in d['items']]"
@@ -249,7 +249,7 @@ show `No registered endpoints were returned from Pexip.`
 
 ### 3.3.5 Application display name in UI
 
-Navigate to `https://<SERVER>/cklabScheduler/` in a browser.
+Navigate to `https://<SERVER>/sbalkcScheduler/` in a browser.
 
 **Expected (default name):**
 - Browser tab title reads `SBALKC Scheduler`
@@ -260,10 +260,10 @@ To test a custom name, set `APP_DISPLAY_NAME` in the env file and restart the we
 ```bash
 # On server
 sed -i 's/^APP_DISPLAY_NAME=.*/APP_DISPLAY_NAME="Acme Telehealth"/' \
-    /etc/cklabScheduler/cklabScheduler.env
-systemctl restart cklab-scheduler-web
+    /etc/sbalkcScheduler/sbalkcScheduler.env
+systemctl restart sbalkc-scheduler-web
 sleep 3
-curl -sk "https://<SERVER>/cklabScheduler/" | grep -E '<title>|<h1>'
+curl -sk "https://<SERVER>/sbalkcScheduler/" | grep -E '<title>|<h1>'
 ```
 
 **Expected after custom name:**
@@ -276,8 +276,8 @@ curl -sk "https://<SERVER>/cklabScheduler/" | grep -E '<title>|<h1>'
 Restore the original value before continuing:
 ```bash
 sed -i 's/^APP_DISPLAY_NAME=.*/APP_DISPLAY_NAME="SBALKC Scheduler"/' \
-    /etc/cklabScheduler/cklabScheduler.env
-systemctl restart cklab-scheduler-web
+    /etc/sbalkcScheduler/sbalkcScheduler.env
+systemctl restart sbalkc-scheduler-web
 ```
 
 **Pass criteria:**
@@ -288,7 +288,7 @@ systemctl restart cklab-scheduler-web
 ### 3.3.6 Config endpoint
 
 ```bash
-curl -sk "https://<SERVER>/cklabScheduler/api/config" | python3 -m json.tool
+curl -sk "https://<SERVER>/sbalkcScheduler/api/config" | python3 -m json.tool
 ```
 
 **Expected:** `"ok": true`, `"pattern_regex": "^doc[a-zA-Z0-9]{16}$"`, non-empty
@@ -323,7 +323,7 @@ claims it. 6 minutes gives enough time to observe the full lifecycle.
 ### 3.4.2 Create the test meeting
 
 ```bash
-curl -sk -X POST "https://<SERVER>/cklabScheduler/api/meetings" \
+curl -sk -X POST "https://<SERVER>/sbalkcScheduler/api/meetings" \
   -H "Content-Type: application/json" \
   -d "{
     \"title\": \"Phase 3 Validation Test\",
@@ -349,7 +349,7 @@ curl -sk -X POST "https://<SERVER>/cklabScheduler/api/meetings" \
 ### 3.4.3 Confirm meeting written to SQLite
 
 ```bash
-sqlite3 /var/lib/cklabScheduler/scheduler.db \
+sqlite3 /var/lib/sbalkcScheduler/scheduler.db \
   "SELECT id, meeting_alias, status, started_at, ended_at
    FROM meetings
    WHERE meeting_alias = '${ALIAS}';"
@@ -372,7 +372,7 @@ ticks every 10 seconds; allow up to 15 seconds after `START` for the claim.
 
 ```bash
 # Watch status in real time
-watch -n 2 "sqlite3 /var/lib/cklabScheduler/scheduler.db \
+watch -n 2 "sqlite3 /var/lib/sbalkcScheduler/scheduler.db \
   \"SELECT status, started_at FROM meetings WHERE meeting_alias = '${ALIAS}';\""
 ```
 
@@ -387,7 +387,7 @@ or `started_with_errors`. `started_at` is populated.
 ### 3.4.5 Confirm Pexip dial-out in journal
 
 ```bash
-journalctl -u cklab-scheduler-worker \
+journalctl -u sbalkc-scheduler-worker \
     --since "$(date -u -d '-2 minutes' '+%Y-%m-%d %H:%M:%S')" \
     --no-pager | grep -E 'start|dial|started'
 ```
@@ -395,14 +395,14 @@ journalctl -u cklab-scheduler-worker \
 **Expected log lines** (representative):
 
 ```
-cklab-scheduler-worker[NNN]: Meeting docPHASE3VALIDATE (id=1) started as started
+sbalkc-scheduler-worker[NNN]: Meeting docPHASE3VALIDATE (id=1) started as started
 ```
 
 Or if any dial failed:
 
 ```
-cklab-scheduler-worker[NNN]: Start: dial failed for <ENDPOINT_ALIAS> in docPHASE3VALIDATE: ...
-cklab-scheduler-worker[NNN]: Meeting docPHASE3VALIDATE (id=1) started as started_with_errors
+sbalkc-scheduler-worker[NNN]: Start: dial failed for <ENDPOINT_ALIAS> in docPHASE3VALIDATE: ...
+sbalkc-scheduler-worker[NNN]: Meeting docPHASE3VALIDATE (id=1) started as started_with_errors
 ```
 
 **Pass criterion:** A journal line contains `started as started` or
@@ -411,7 +411,7 @@ cklab-scheduler-worker[NNN]: Meeting docPHASE3VALIDATE (id=1) started as started
 ### 3.4.6 Confirm endpoint status in SQLite
 
 ```bash
-sqlite3 /var/lib/cklabScheduler/scheduler.db \
+sqlite3 /var/lib/sbalkcScheduler/scheduler.db \
   "SELECT me.endpoint_alias, me.status, me.dial_response
    FROM meeting_endpoints me
    JOIN meetings m ON m.id = me.meeting_id
@@ -425,7 +425,7 @@ sqlite3 /var/lib/cklabScheduler/scheduler.db \
 
 ### 3.4.7 Confirm meeting visible in UI
 
-Navigate to `https://<SERVER>/cklabScheduler/` and select today's date.
+Navigate to `https://<SERVER>/sbalkcScheduler/` and select today's date.
 
 **Expected:** Meeting "Phase 3 Validation Test" appears. Status badge shows
 `started` (or `started_with_errors`).
@@ -437,7 +437,7 @@ Navigate to `https://<SERVER>/cklabScheduler/` and select today's date.
 After `END` time passes, allow up to 15 seconds for the worker to claim the ending:
 
 ```bash
-sqlite3 /var/lib/cklabScheduler/scheduler.db \
+sqlite3 /var/lib/sbalkcScheduler/scheduler.db \
   "SELECT status, started_at, ended_at
    FROM meetings
    WHERE meeting_alias = '${ALIAS}';"
@@ -449,7 +449,7 @@ sqlite3 /var/lib/cklabScheduler/scheduler.db \
 3. `ended|<started_at>|<ended_at>` or `ended_with_errors|...`
 
 ```bash
-journalctl -u cklab-scheduler-worker \
+journalctl -u sbalkc-scheduler-worker \
     --since "$(date -u -d '-1 minute' '+%Y-%m-%d %H:%M:%S')" \
     --no-pager | grep -E 'end|disconnect'
 ```
@@ -473,7 +473,7 @@ ALIAS2="docPHASE3RESTART0"   # 19 chars
 START2=$(date -u -d '+30 seconds' '+%Y-%m-%dT%H:%M:%S+00:00')
 END2=$(date -u -d '+10 minutes'  '+%Y-%m-%dT%H:%M:%S+00:00')
 
-curl -sk -X POST "https://<SERVER>/cklabScheduler/api/meetings" \
+curl -sk -X POST "https://<SERVER>/sbalkcScheduler/api/meetings" \
   -H "Content-Type: application/json" \
   -d "{
     \"title\": \"Phase 3 Restart Test\",
@@ -492,7 +492,7 @@ curl -sk -X POST "https://<SERVER>/cklabScheduler/api/meetings" \
 
 ```bash
 # Poll until started
-until sqlite3 /var/lib/cklabScheduler/scheduler.db \
+until sqlite3 /var/lib/sbalkcScheduler/scheduler.db \
     "SELECT status FROM meetings WHERE meeting_alias='${ALIAS2}';" \
     | grep -qE 'started'; do
   sleep 3
@@ -504,7 +504,7 @@ echo " started"
 ### 3.5.3 Force-restart the worker
 
 ```bash
-systemctl restart cklab-scheduler-worker
+systemctl restart sbalkc-scheduler-worker
 echo "Worker restarted at $(date -u)"
 ```
 
@@ -516,7 +516,7 @@ state with a valid `started_at`, so it is **not** treated as stuck). The meeting
 should remain `started`:
 
 ```bash
-sqlite3 /var/lib/cklabScheduler/scheduler.db \
+sqlite3 /var/lib/sbalkcScheduler/scheduler.db \
   "SELECT status, started_at FROM meetings WHERE meeting_alias='${ALIAS2}';"
 ```
 
@@ -528,7 +528,7 @@ only acts on `starting` and `ending` transitions.
 
 ```bash
 sleep 15
-curl -sk "https://<SERVER>/cklabScheduler/api/health" \
+curl -sk "https://<SERVER>/sbalkcScheduler/api/health" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); \
       print('heartbeat:', d['scheduler_worker']['last_heartbeat_seconds_ago'], 's ago'); \
       print('ok:', d['scheduler_worker']['ok'])"
@@ -542,7 +542,7 @@ Manually set a meeting to `starting` with an old `updated_at`:
 
 ```bash
 ALIAS3="docPHASE3RECOVERY0"
-sqlite3 /var/lib/cklabScheduler/scheduler.db \
+sqlite3 /var/lib/sbalkcScheduler/scheduler.db \
   "INSERT INTO meetings
      (title, meeting_alias, start_time, end_time, status, updated_at, created_at)
    VALUES
@@ -555,7 +555,7 @@ Wait up to 15 seconds (next tick) and observe:
 
 ```bash
 sleep 15
-sqlite3 /var/lib/cklabScheduler/scheduler.db \
+sqlite3 /var/lib/sbalkcScheduler/scheduler.db \
   "SELECT status FROM meetings WHERE meeting_alias='${ALIAS3}';"
 ```
 
@@ -563,7 +563,7 @@ sqlite3 /var/lib/cklabScheduler/scheduler.db \
 detected the 3-minute-old `starting` state and attempted recovery.
 
 ```bash
-journalctl -u cklab-scheduler-worker --since "30 seconds ago" --no-pager \
+journalctl -u sbalkc-scheduler-worker --since "30 seconds ago" --no-pager \
   | grep -i 'recov'
 ```
 
@@ -583,23 +583,23 @@ and leaves both services running.
 
 ```bash
 # Record env file modification time
-stat -c '%y' /etc/cklabScheduler/cklabScheduler.env
+stat -c '%y' /etc/sbalkcScheduler/sbalkcScheduler.env
 
 # Record database row count
-sqlite3 /var/lib/cklabScheduler/scheduler.db "SELECT COUNT(*) FROM meetings;"
+sqlite3 /var/lib/sbalkcScheduler/scheduler.db "SELECT COUNT(*) FROM meetings;"
 
 # Record the current SECRET_KEY (first 8 chars only — do not expose full key)
-grep '^SECRET_KEY=' /etc/cklabScheduler/cklabScheduler.env | cut -c1-20
+grep '^SECRET_KEY=' /etc/sbalkcScheduler/sbalkcScheduler.env | cut -c1-20
 
 # Record current Apache ProxyPass target (should change after r2 → r3 upgrade)
-grep -E 'ProxyPass[^R]' /etc/apache2/sites-available/cklabscheduler.conf
+grep -E 'ProxyPass[^R]' /etc/apache2/sites-available/sbalkcscheduler.conf
 ```
 
 For an r2 installation the ProxyPass line will show:
 ```
-    ProxyPass        /cklabScheduler/ http://127.0.0.1:5080/
+    ProxyPass        /sbalkcScheduler/ http://127.0.0.1:5080/
 ```
-After upgrade it must show `http://127.0.0.1:5080/cklabScheduler/`.
+After upgrade it must show `http://127.0.0.1:5080/sbalkcScheduler/`.
 
 ### 3.6.2 Simulate a code update
 
@@ -617,14 +617,14 @@ Extract to a new directory:
 
 ```bash
 # On server
-mkdir -p /root/cklabScheduler-v2
-tar -xzf /tmp/cklabScheduler.tar.gz -C /root/cklabScheduler-v2
+mkdir -p /root/sbalkcScheduler-v2
+tar -xzf /tmp/sbalkcScheduler.tar.gz -C /root/sbalkcScheduler-v2
 ```
 
 ### 3.6.3 Run upgrade.sh
 
 ```bash
-cd /root/cklabScheduler-v2
+cd /root/sbalkcScheduler-v2
 bash deploy/upgrade.sh
 ```
 
@@ -636,7 +636,7 @@ bash deploy/upgrade.sh
 ══ Stopping services ══
   Both services stopped.
 ══ Backing up database ══
-  Backup: /var/lib/cklabScheduler/scheduler.db.bak.<TIMESTAMP>
+  Backup: /var/lib/sbalkcScheduler/scheduler.db.bak.<TIMESTAMP>
 ══ Replacing application files ══
   Files replaced...
 ══ Updating Python dependencies ══
@@ -647,7 +647,7 @@ bash deploy/upgrade.sh
   Unit files updated and daemon reloaded.
 ══ Updating Apache configuration ══
   Detected r2 ProxyPass (http://127.0.0.1:5080/) — applying r3 migration...
-  Backup: /etc/apache2/sites-available/cklabscheduler.conf.bak.<TIMESTAMP>
+  Backup: /etc/apache2/sites-available/sbalkcscheduler.conf.bak.<TIMESTAMP>
   ProxyPass lines updated. Validating new configuration...
   Syntax OK
   Apache configuration validated and reloaded.
@@ -670,31 +670,31 @@ will instead print:
 
 ```bash
 # Config file must be unchanged
-stat -c '%y' /etc/cklabScheduler/cklabScheduler.env
+stat -c '%y' /etc/sbalkcScheduler/sbalkcScheduler.env
 # (modification time must match pre-upgrade timestamp)
 
 # Database row count must match
-sqlite3 /var/lib/cklabScheduler/scheduler.db "SELECT COUNT(*) FROM meetings;"
+sqlite3 /var/lib/sbalkcScheduler/scheduler.db "SELECT COUNT(*) FROM meetings;"
 
 # SECRET_KEY prefix must match
-grep '^SECRET_KEY=' /etc/cklabScheduler/cklabScheduler.env | cut -c1-20
+grep '^SECRET_KEY=' /etc/sbalkcScheduler/sbalkcScheduler.env | cut -c1-20
 
 # Code change visible in installed file
-grep 'Phase 3 upgrade test marker' /opt/cklabScheduler/worker.py
+grep 'Phase 3 upgrade test marker' /opt/sbalkcScheduler/worker.py
 
 # Services running
-systemctl is-active cklab-scheduler-web cklab-scheduler-worker
+systemctl is-active sbalkc-scheduler-web sbalkc-scheduler-worker
 
 # Health check clean
-curl -sk "https://<SERVER>/cklabScheduler/api/health" \
+curl -sk "https://<SERVER>/sbalkcScheduler/api/health" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok:', d['ok'])"
 ```
 
 **Pass criteria:**
-- `cklabScheduler.env` modification time is **unchanged** from pre-upgrade
+- `sbalkcScheduler.env` modification time is **unchanged** from pre-upgrade
 - Meeting row count is **unchanged**
 - `SECRET_KEY` prefix is **unchanged** (proving the env file was not overwritten)
-- Code marker is present in `/opt/cklabScheduler/worker.py`
+- Code marker is present in `/opt/sbalkcScheduler/worker.py`
 - Both services are `active`
 - Health check returns `ok: True`
 
@@ -705,10 +705,10 @@ added with the default value without disturbing any other setting.
 
 ```bash
 # Must be present with the default value
-grep '^APP_DISPLAY_NAME=' /etc/cklabScheduler/cklabScheduler.env
+grep '^APP_DISPLAY_NAME=' /etc/sbalkcScheduler/sbalkcScheduler.env
 
 # SECRET_KEY must be unchanged (env migration must not overwrite existing keys)
-grep '^SECRET_KEY=' /etc/cklabScheduler/cklabScheduler.env | cut -c1-20
+grep '^SECRET_KEY=' /etc/sbalkcScheduler/sbalkcScheduler.env | cut -c1-20
 ```
 
 **Expected:**
@@ -721,13 +721,13 @@ To verify that a pre-existing custom value is preserved (repeat-upgrade idempote
 ```bash
 # Simulate admin having set a custom name before upgrade
 sed -i 's/^APP_DISPLAY_NAME=.*/APP_DISPLAY_NAME="Acme Telehealth"/' \
-    /etc/cklabScheduler/cklabScheduler.env
+    /etc/sbalkcScheduler/sbalkcScheduler.env
 
 # Run upgrade again
 bash deploy/upgrade.sh
 
 # Confirm the custom name survived
-grep '^APP_DISPLAY_NAME=' /etc/cklabScheduler/cklabScheduler.env
+grep '^APP_DISPLAY_NAME=' /etc/sbalkcScheduler/sbalkcScheduler.env
 ```
 
 **Expected output from upgrade:**
@@ -744,7 +744,7 @@ an admin-set value.
 ### 3.6.6 Verify database backup was created
 
 ```bash
-ls -lh /var/lib/cklabScheduler/scheduler.db.bak.*
+ls -lh /var/lib/sbalkcScheduler/scheduler.db.bak.*
 ```
 
 **Expected:** One `.bak.<TIMESTAMP>` file created just before the upgrade.
@@ -755,18 +755,18 @@ Confirm the Apache config was surgically updated:
 
 ```bash
 # ProxyPass target must now include the prefix
-grep -E 'ProxyPass[^R]' /etc/apache2/sites-available/cklabscheduler.conf
+grep -E 'ProxyPass[^R]' /etc/apache2/sites-available/sbalkcscheduler.conf
 ```
 
 **Expected (r3 format):**
 ```
-    ProxyPass        /cklabScheduler/ http://127.0.0.1:5080/cklabScheduler/
+    ProxyPass        /sbalkcScheduler/ http://127.0.0.1:5080/sbalkcScheduler/
 ```
 
 Confirm the Apache config backup was created:
 
 ```bash
-ls -lh /etc/apache2/sites-available/cklabscheduler.conf.bak.*
+ls -lh /etc/apache2/sites-available/sbalkcscheduler.conf.bak.*
 ```
 
 **Expected:** One `.bak.<TIMESTAMP>` file from the upgrade run.
@@ -775,7 +775,7 @@ Test that the corrected path reaches Gunicorn directly (bypassing Apache):
 
 ```bash
 # Apache forwards this exact path; Gunicorn must respond with valid JSON
-curl -s http://127.0.0.1:5080/cklabScheduler/api/health
+curl -s http://127.0.0.1:5080/sbalkcScheduler/api/health
 ```
 
 **Expected:** `{"ok": true, ...}` — not an HTTP 500 / IndexError.
@@ -783,11 +783,11 @@ curl -s http://127.0.0.1:5080/cklabScheduler/api/health
 Run `verify_install.sh` to confirm all checks still pass:
 
 ```bash
-sudo bash /root/cklabScheduler-v2/deploy/verify_install.sh <SERVER>
+sudo bash /root/sbalkcScheduler-v2/deploy/verify_install.sh <SERVER>
 ```
 
 **Pass criteria:**
-- `ProxyPass /cklabScheduler/ → 127.0.0.1:5080/cklabScheduler/ (prefix preserved)` ✓
+- `ProxyPass /sbalkcScheduler/ → 127.0.0.1:5080/sbalkcScheduler/ (prefix preserved)` ✓
 - Apache config backup file exists under `sites-available/`
 - Direct Gunicorn curl returns `"ok": true`
 - `verify_install.sh` exits 0
@@ -802,7 +802,7 @@ backing it up, trigger `upgrade.sh`, and observe the restore:
 # WARNING: this test intentionally breaks Apache temporarily; restore immediately after.
 
 # Manually corrupt the config
-echo 'InvalidDirective' >> /etc/apache2/sites-available/cklabscheduler.conf
+echo 'InvalidDirective' >> /etc/apache2/sites-available/sbalkcscheduler.conf
 
 # Run upgrade from an r2 snapshot (requires resetting ProxyPass to r2 first)
 # Then observe upgrade.sh output — it must print:
@@ -826,15 +826,15 @@ defaulting to preserving configuration, database, and the service account.
 ### 3.7.1 Record state before uninstall
 
 ```bash
-stat /etc/cklabScheduler/cklabScheduler.env   # must survive
-stat /var/lib/cklabScheduler/scheduler.db     # must survive
-id cklabscheduler                             # must survive
+stat /etc/sbalkcScheduler/sbalkcScheduler.env   # must survive
+stat /var/lib/sbalkcScheduler/scheduler.db     # must survive
+id sbalkcscheduler                             # must survive
 ```
 
 ### 3.7.2 Run uninstall.sh
 
 ```bash
-bash /root/cklabScheduler-v2/deploy/uninstall.sh
+bash /root/sbalkcScheduler-v2/deploy/uninstall.sh
 ```
 
 Answer each prompt as follows:
@@ -842,37 +842,37 @@ Answer each prompt as follows:
 | Prompt | Answer | Intent |
 |---|---|---|
 | `Continue with uninstall?` | `y` | Proceed |
-| `Remove application code at /opt/cklabScheduler?` | `y` | Remove code |
-| `Remove configuration at /etc/cklabScheduler?` | `n` | **Preserve config** |
-| `Remove database data at /var/lib/cklabScheduler?` | `n` | **Preserve data** |
-| `Remove service account 'cklabscheduler'?` | `n` | **Preserve account** |
+| `Remove application code at /opt/sbalkcScheduler?` | `y` | Remove code |
+| `Remove configuration at /etc/sbalkcScheduler?` | `n` | **Preserve config** |
+| `Remove database data at /var/lib/sbalkcScheduler?` | `n` | **Preserve data** |
+| `Remove service account 'sbalkcscheduler'?` | `n` | **Preserve account** |
 
 ### 3.7.3 Verify post-uninstall state
 
 ```bash
 # Services must be gone
-systemctl is-active cklab-scheduler-web   2>/dev/null || echo "stopped (expected)"
-systemctl is-active cklab-scheduler-worker 2>/dev/null || echo "stopped (expected)"
+systemctl is-active sbalkc-scheduler-web   2>/dev/null || echo "stopped (expected)"
+systemctl is-active sbalkc-scheduler-worker 2>/dev/null || echo "stopped (expected)"
 
 # Unit files must be removed
-test ! -f /etc/systemd/system/cklab-scheduler-web.service    && echo "unit removed (expected)"
-test ! -f /etc/systemd/system/cklab-scheduler-worker.service && echo "unit removed (expected)"
+test ! -f /etc/systemd/system/sbalkc-scheduler-web.service    && echo "unit removed (expected)"
+test ! -f /etc/systemd/system/sbalkc-scheduler-worker.service && echo "unit removed (expected)"
 
 # Apache site must be removed
-test ! -f /etc/apache2/sites-available/cklabscheduler.conf && echo "apache config removed (expected)"
-test ! -L /etc/apache2/sites-enabled/cklabscheduler.conf   && echo "apache site disabled (expected)"
+test ! -f /etc/apache2/sites-available/sbalkcscheduler.conf && echo "apache config removed (expected)"
+test ! -L /etc/apache2/sites-enabled/sbalkcscheduler.conf   && echo "apache site disabled (expected)"
 
 # Application code must be gone
-test ! -d /opt/cklabScheduler && echo "app code removed (expected)"
+test ! -d /opt/sbalkcScheduler && echo "app code removed (expected)"
 
 # Configuration must be preserved
-test -f /etc/cklabScheduler/cklabScheduler.env && echo "config preserved (expected)"
+test -f /etc/sbalkcScheduler/sbalkcScheduler.env && echo "config preserved (expected)"
 
 # Database must be preserved
-test -f /var/lib/cklabScheduler/scheduler.db && echo "database preserved (expected)"
+test -f /var/lib/sbalkcScheduler/scheduler.db && echo "database preserved (expected)"
 
 # Service account must be preserved
-id cklabscheduler && echo "service account preserved (expected)"
+id sbalkcscheduler && echo "service account preserved (expected)"
 ```
 
 ### 3.7.4 Verify uninstall summary output
@@ -885,21 +885,21 @@ The final output should list exactly what was removed and what was kept:
   Removed:
     ✓ systemd units
     ✓ Apache vhost config
-    ✓ application code (/opt/cklabScheduler)
+    ✓ application code (/opt/sbalkcScheduler)
 
   Preserved:
-    – configuration (/etc/cklabScheduler)
-    – database data (/var/lib/cklabScheduler)
-    – service account 'cklabscheduler'
+    – configuration (/etc/sbalkcScheduler)
+    – database data (/var/lib/sbalkcScheduler)
+    – service account 'sbalkcscheduler'
 ```
 
 **Pass criteria:**
 - Services are stopped and unit files removed
 - Apache site is removed
-- `/opt/cklabScheduler` does not exist
-- `/etc/cklabScheduler/cklabScheduler.env` exists and is unchanged
-- `/var/lib/cklabScheduler/scheduler.db` exists and is unchanged
-- `cklabscheduler` user still exists
+- `/opt/sbalkcScheduler` does not exist
+- `/etc/sbalkcScheduler/sbalkcScheduler.env` exists and is unchanged
+- `/var/lib/sbalkcScheduler/scheduler.db` exists and is unchanged
+- `sbalkcscheduler` user still exists
 
 ---
 
@@ -919,8 +919,8 @@ Mark each item ✓ PASS, ✗ FAIL, or N/A before signing off on Phase 3.
 
 ### Smoke Tests
 
-- [ ] 3.3.1 — UI loads at `/cklabScheduler/`
-- [ ] 3.3.2 — Bare `/cklabScheduler` redirects 301 → `/cklabScheduler/`
+- [ ] 3.3.1 — UI loads at `/sbalkcScheduler/`
+- [ ] 3.3.2 — Bare `/sbalkcScheduler` redirects 301 → `/sbalkcScheduler/`
 - [ ] 3.3.3 — `/api/health` returns `ok: true`, `scheduler_worker.ok: true`
 - [ ] 3.3.3 — Health response exposes no hostnames or credentials
 - [ ] 3.3.4 — `/api/endpoints` returns only currently-registered Pexip endpoints
@@ -954,27 +954,27 @@ Mark each item ✓ PASS, ✗ FAIL, or N/A before signing off on Phase 3.
 - [ ] 3.6.3 — `upgrade.sh` completed without errors
 - [ ] 3.6.3 — Apache migration step printed "validated and reloaded" (r2 → r3)
 - [ ] 3.6.3 — "Updating environment configuration" step printed `APP_DISPLAY_NAME not found — added default`
-- [ ] 3.6.4 — `cklabScheduler.env` modification time unchanged (env vars only appended, not overwritten)
+- [ ] 3.6.4 — `sbalkcScheduler.env` modification time unchanged (env vars only appended, not overwritten)
 - [ ] 3.6.4 — `SECRET_KEY` unchanged (env file was not overwritten)
-- [ ] 3.6.4 — Code change present in `/opt/cklabScheduler/worker.py`
+- [ ] 3.6.4 — Code change present in `/opt/sbalkcScheduler/worker.py`
 - [ ] 3.6.4 — Both services active post-upgrade
 - [ ] 3.6.4 — Health check `ok: True` post-upgrade
 - [ ] 3.6.5 — `APP_DISPLAY_NAME="SBALKC Scheduler"` present in env file after upgrade
 - [ ] 3.6.5 — Repeat upgrade with custom `APP_DISPLAY_NAME` set: value preserved, "already set" printed
 - [ ] 3.6.6 — Database backup file created
-- [ ] 3.6.7 — Apache ProxyPass shows `http://127.0.0.1:5080/cklabScheduler/` (r3 format)
+- [ ] 3.6.7 — Apache ProxyPass shows `http://127.0.0.1:5080/sbalkcScheduler/` (r3 format)
 - [ ] 3.6.7 — Apache config backup created under `sites-available/`
-- [ ] 3.6.7 — Direct `curl http://127.0.0.1:5080/cklabScheduler/api/health` returns `ok: true`
+- [ ] 3.6.7 — Direct `curl http://127.0.0.1:5080/sbalkcScheduler/api/health` returns `ok: true`
 - [ ] 3.6.7 — `verify_install.sh` passes ProxyPass check post-upgrade
 
 ### Uninstall
 
 - [ ] 3.7.3 — Services stopped, unit files removed
 - [ ] 3.7.3 — Apache site removed
-- [ ] 3.7.3 — `/opt/cklabScheduler` removed
-- [ ] 3.7.3 — `/etc/cklabScheduler/cklabScheduler.env` preserved
-- [ ] 3.7.3 — `/var/lib/cklabScheduler/scheduler.db` preserved
-- [ ] 3.7.3 — `cklabscheduler` user account preserved
+- [ ] 3.7.3 — `/opt/sbalkcScheduler` removed
+- [ ] 3.7.3 — `/etc/sbalkcScheduler/sbalkcScheduler.env` preserved
+- [ ] 3.7.3 — `/var/lib/sbalkcScheduler/scheduler.db` preserved
+- [ ] 3.7.3 — `sbalkcscheduler` user account preserved
 
 ---
 

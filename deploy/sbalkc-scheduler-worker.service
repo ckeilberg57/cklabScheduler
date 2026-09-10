@@ -1,0 +1,19 @@
+[Unit]
+Description=SBALKC Scheduler Worker (meeting start/end automation)
+After=network.target
+
+[Service]
+Type=simple
+User=sbalkcscheduler
+Group=sbalkcscheduler
+WorkingDirectory=/opt/sbalkcScheduler
+EnvironmentFile=/etc/sbalkcScheduler/sbalkcScheduler.env
+ExecStart=/opt/sbalkcScheduler/venv/bin/python worker.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sbalkc-scheduler-worker
+
+[Install]
+WantedBy=multi-user.target
