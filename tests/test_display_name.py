@@ -103,9 +103,9 @@ _add_env_default "{key}" "{default}"
 # ── Settings unit tests ───────────────────────────────────────────────────────
 
 def test_settings_class_default():
-    """Settings.APP_DISPLAY_NAME default is 'CKlabs Scheduler'."""
-    with patch.object(Settings, "APP_DISPLAY_NAME", "CKlabs Scheduler"):
-        assert Settings.APP_DISPLAY_NAME == "CKlabs Scheduler"
+    """Settings.APP_DISPLAY_NAME default is 'SBALKC Scheduler'."""
+    with patch.object(Settings, "APP_DISPLAY_NAME", "SBALKC Scheduler"):
+        assert Settings.APP_DISPLAY_NAME == "SBALKC Scheduler"
 
 
 def test_custom_app_display_name_loaded():
@@ -115,9 +115,9 @@ def test_custom_app_display_name_loaded():
 
 
 def test_default_app_display_name_fallback():
-    """When APP_DISPLAY_NAME env var is absent, the default is 'CKlabs Scheduler'."""
-    default = os.getenv("APP_DISPLAY_NAME", "CKlabs Scheduler")
-    assert default == "CKlabs Scheduler"
+    """When APP_DISPLAY_NAME env var is absent, the default is 'SBALKC Scheduler'."""
+    default = os.getenv("APP_DISPLAY_NAME", "SBALKC Scheduler")
+    assert default == "SBALKC Scheduler"
 
 
 def test_control_display_name_independent_of_app_display_name():
@@ -161,28 +161,28 @@ def test_html_branding_h1_uses_custom_app_display_name(test_db):
 
 
 def test_html_title_uses_default_name(test_db):
-    """<title> renders 'CKlabs Scheduler' when that is the configured name."""
+    """<title> renders 'SBALKC Scheduler' when that is the configured name."""
     app = make_app(test_db)
     client = _logged_in_client(app, test_db)
-    with patch.object(Settings, "APP_DISPLAY_NAME", "CKlabs Scheduler"):
+    with patch.object(Settings, "APP_DISPLAY_NAME", "SBALKC Scheduler"):
         with patch.object(Settings, "DB_PATH", test_db):
             resp = client.get("/")
     html = resp.get_data(as_text=True)
-    assert "<title>CKlabs Scheduler</title>" in html
+    assert "<title>SBALKC Scheduler</title>" in html
 
 
 def test_control_display_name_does_not_appear_in_html_title(test_db):
     """CONTROL_DISPLAY_NAME must not appear in <title>; they are independent."""
     app = make_app(test_db)
     client = _logged_in_client(app, test_db)
-    with patch.object(Settings, "APP_DISPLAY_NAME",     "CKlabs Scheduler"), \
+    with patch.object(Settings, "APP_DISPLAY_NAME",     "SBALKC Scheduler"), \
          patch.object(Settings, "CONTROL_DISPLAY_NAME", "Dial-in Bot"), \
          patch.object(Settings, "DB_PATH", test_db):
         resp = client.get("/")
     html = resp.get_data(as_text=True)
     title_content = html.split("<title>")[1].split("</title>")[0]
     assert "Dial-in Bot" not in title_content
-    assert "CKlabs Scheduler" in title_content
+    assert "SBALKC Scheduler" in title_content
 
 
 # ── upgrade.sh env migration tests ────────────────────────────────────────────
@@ -191,9 +191,9 @@ def test_upgrade_adds_app_display_name_when_absent():
     """upgrade.sh _add_env_default adds APP_DISPLAY_NAME when it is absent."""
     env_before = "REG_STATUS_HOST=pexip.example.com\nSECRET_KEY=abc123\n"
     stdout, env_after = _run_add_env_default(
-        env_before, "APP_DISPLAY_NAME", "CKlabs Scheduler"
+        env_before, "APP_DISPLAY_NAME", "SBALKC Scheduler"
     )
-    assert 'APP_DISPLAY_NAME="CKlabs Scheduler"' in env_after
+    assert 'APP_DISPLAY_NAME="SBALKC Scheduler"' in env_after
     assert "not found — added default" in stdout
 
 
@@ -205,8 +205,8 @@ def test_upgrade_preserves_existing_custom_display_name():
         "SECRET_KEY=abc123\n"
     )
     stdout, env_after = _run_add_env_default(
-        env_before, "APP_DISPLAY_NAME", "CKlabs Scheduler"
+        env_before, "APP_DISPLAY_NAME", "SBALKC Scheduler"
     )
     assert 'APP_DISPLAY_NAME="Acme Telehealth"' in env_after
-    assert 'APP_DISPLAY_NAME="CKlabs Scheduler"' not in env_after
+    assert 'APP_DISPLAY_NAME="SBALKC Scheduler"' not in env_after
     assert "already set — preserving" in stdout

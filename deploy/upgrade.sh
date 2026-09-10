@@ -160,7 +160,7 @@ _add_env_default() {
         echo "  ${key} not found — added default: ${default}"
     fi
 }
-_add_env_default "APP_DISPLAY_NAME"    "CKlabs Scheduler"
+_add_env_default "APP_DISPLAY_NAME"    "SBALKC Scheduler"
 _add_env_default "LOCAL_AUTH_ENABLED"  "true"
 _add_env_default "ENTRA_ENABLED"       "false"
 _add_env_default "SESSION_COOKIE_SECURE" "true"

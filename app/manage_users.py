@@ -1,5 +1,5 @@
 """
-cklabScheduler local user management utility.
+SBALKC Scheduler local user management utility.
 
 Usage
 -----
@@ -142,7 +142,7 @@ def main():
     init_db()
 
     parser = argparse.ArgumentParser(
-        description="cklabScheduler local user management",
+        description="SBALKC Scheduler local user management",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )

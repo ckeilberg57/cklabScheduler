@@ -170,7 +170,7 @@ All runtime configuration lives in `/etc/cklabScheduler/cklabScheduler.env`. Dur
 | `MGMT_USER` | Pexip Management API username |
 | `MGMT_PASS` | Pexip Management API password |
 | `VERIFY_TLS` | `true`/`false` — verify TLS certificates on Pexip API calls |
-| `APP_DISPLAY_NAME` | UI title and sidebar heading (default: `CKlabs Scheduler`) |
+| `APP_DISPLAY_NAME` | UI title and sidebar heading (default: `SBALKC Scheduler`) |
 | `HOST_PIN` | PIN sent as host when dialling endpoints (leave blank for no PIN) |
 | `CONTROL_DISPLAY_NAME` | Display name of the scheduler's Pexip control participant |
 | `DIAL_PROTOCOL` | `sip`, `h323`, or `auto` |

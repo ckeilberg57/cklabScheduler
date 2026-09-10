@@ -1,5 +1,5 @@
 [Unit]
-Description=CKlabs Scheduler Worker (meeting start/end automation)
+Description=SBALKC Scheduler Worker (meeting start/end automation)
 After=network.target
 
 [Service]

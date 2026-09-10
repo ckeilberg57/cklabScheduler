@@ -87,7 +87,7 @@ Work through each prompt. Refer to the table below for expected inputs:
 | Pexip Management API password | *(enter password; not echoed)* |
 | Verify TLS | `true` |
 | Conference host PIN | *(press Enter for no PIN)* |
-| Application display name | *(press Enter for default `CKlabs Scheduler`, or type a custom name)* |
+| Application display name | *(press Enter for default `SBALKC Scheduler`, or type a custom name)* |
 | Scheduler display name | `Scheduler` *(or press Enter for default)* |
 | Dial protocol | `auto` *(or press Enter)* |
 | WebRTC base URL | *(press Enter to construct from COMMAND_HOST)* |
@@ -252,8 +252,8 @@ show `No registered endpoints were returned from Pexip.`
 Navigate to `https://<SERVER>/cklabScheduler/` in a browser.
 
 **Expected (default name):**
-- Browser tab title reads `CKlabs Scheduler`
-- Sidebar `<h1>` heading reads `CKlabs Scheduler`
+- Browser tab title reads `SBALKC Scheduler`
+- Sidebar `<h1>` heading reads `SBALKC Scheduler`
 
 To test a custom name, set `APP_DISPLAY_NAME` in the env file and restart the web service:
 
@@ -275,7 +275,7 @@ curl -sk "https://<SERVER>/cklabScheduler/" | grep -E '<title>|<h1>'
 
 Restore the original value before continuing:
 ```bash
-sed -i 's/^APP_DISPLAY_NAME=.*/APP_DISPLAY_NAME="CKlabs Scheduler"/' \
+sed -i 's/^APP_DISPLAY_NAME=.*/APP_DISPLAY_NAME="SBALKC Scheduler"/' \
     /etc/cklabScheduler/cklabScheduler.env
 systemctl restart cklab-scheduler-web
 ```
@@ -652,7 +652,7 @@ bash deploy/upgrade.sh
   Syntax OK
   Apache configuration validated and reloaded.
 ══ Updating environment configuration ══
-  APP_DISPLAY_NAME not found — added default: CKlabs Scheduler
+  APP_DISPLAY_NAME not found — added default: SBALKC Scheduler
 ══ Starting services ══
   Both services started.
 ══ Health check ══
@@ -713,7 +713,7 @@ grep '^SECRET_KEY=' /etc/cklabScheduler/cklabScheduler.env | cut -c1-20
 
 **Expected:**
 ```
-APP_DISPLAY_NAME="CKlabs Scheduler"
+APP_DISPLAY_NAME="SBALKC Scheduler"
 ```
 
 To verify that a pre-existing custom value is preserved (repeat-upgrade idempotency):
@@ -959,7 +959,7 @@ Mark each item ✓ PASS, ✗ FAIL, or N/A before signing off on Phase 3.
 - [ ] 3.6.4 — Code change present in `/opt/cklabScheduler/worker.py`
 - [ ] 3.6.4 — Both services active post-upgrade
 - [ ] 3.6.4 — Health check `ok: True` post-upgrade
-- [ ] 3.6.5 — `APP_DISPLAY_NAME="CKlabs Scheduler"` present in env file after upgrade
+- [ ] 3.6.5 — `APP_DISPLAY_NAME="SBALKC Scheduler"` present in env file after upgrade
 - [ ] 3.6.5 — Repeat upgrade with custom `APP_DISPLAY_NAME` set: value preserved, "already set" printed
 - [ ] 3.6.6 — Database backup file created
 - [ ] 3.6.7 — Apache ProxyPass shows `http://127.0.0.1:5080/cklabScheduler/` (r3 format)

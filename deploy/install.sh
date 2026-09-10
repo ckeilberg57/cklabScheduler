@@ -267,7 +267,7 @@ WEBRTC_BASE_URL="${WEBRTC_BASE_URL:-https://${COMMAND_HOST}/webapp3/m/}"
 
 echo
 echo "── Scheduler ──────────────────────────────────────────────────────────"
-APP_DISPLAY_NAME="$(prompt_default "Application display name (shown in UI title and branding)" "CKlabs Scheduler")"
+APP_DISPLAY_NAME="$(prompt_default "Application display name (shown in UI title and branding)" "SBALKC Scheduler")"
 ABOUT_TO_START_MINUTES="$(prompt_default "Minutes before start to show 'about to start'" "1")"
 DEFAULT_EXTEND_MINUTES="$(prompt_default "Default extension duration in minutes" "15")"
 POLL_SECONDS="$(prompt_default           "Frontend poll interval in seconds" "3")"

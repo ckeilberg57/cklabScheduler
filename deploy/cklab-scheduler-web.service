@@ -1,5 +1,5 @@
 [Unit]
-Description=CKlabs Scheduler Web Application
+Description=SBALKC Scheduler Web Application
 After=network.target
 
 [Service]
