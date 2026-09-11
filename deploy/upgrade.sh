@@ -70,6 +70,16 @@ fi
 [[ -f "${ENV_FILE}" ]] || die "Configuration not found at ${ENV_FILE}. Run install.sh first."
 echo "  Existing SBALKC install confirmed."
 
+# Read URL_PREFIX and SERVER_HOSTNAME from the env file so the health check uses
+# the configured path.  Fall back to safe defaults for pre-URL_PREFIX installs.
+_read_env_val() {
+    grep "^${1}=" "${ENV_FILE}" 2>/dev/null \
+        | sed 's/^[^=]*="\?\([^"]*\)"\?$/\1/' | head -1 || echo ''
+}
+URL_PREFIX="$(_read_env_val URL_PREFIX)"
+URL_PREFIX="${URL_PREFIX:-/sbalkcScheduler}"
+SERVER_HOSTNAME="$(_read_env_val SERVER_HOSTNAME)"
+
 # ── 4. Stop both services ────────────────────────────────────────────────────
 info "Stopping services"
 # Any meetings in 'starting' or 'ending' will be recovered on worker restart
@@ -177,13 +187,9 @@ elif grep -qE 'ProxyPass[[:space:]]*/sbalkcScheduler/[[:space:]]+http://127\.0\.
         die "Apache configuration migration failed. Restored from ${APACHE_CONF_BAK}. Review output above."
     fi
 else
-    echo "  WARNING: ProxyPass pattern not recognized (possibly a custom configuration)."
+    echo "  NOTE: ProxyPass pattern is not the /sbalkcScheduler/ default."
+    echo "  This is expected if a custom URL prefix was configured at install time."
     echo "  No changes made to ${APACHE_CONF}."
-    echo
-    echo "  To apply the r3 prefix-preservation fix manually, update ${APACHE_CONF}:"
-    echo "    ProxyPass        /sbalkcScheduler/ http://127.0.0.1:5080/sbalkcScheduler/"
-    echo "    ProxyPassReverse /sbalkcScheduler/ http://127.0.0.1:5080/sbalkcScheduler/"
-    echo "  Then reload: apache2ctl configtest && systemctl reload apache2"
 fi
 
 # ── 11. Migrate environment configuration ────────────────────────────────────
@@ -199,10 +205,11 @@ _add_env_default() {
         echo "  ${key} not found — added default: ${default}"
     fi
 }
-_add_env_default "APP_DISPLAY_NAME"    "SBALKC Scheduler"
-_add_env_default "LOCAL_AUTH_ENABLED"  "true"
-_add_env_default "ENTRA_ENABLED"       "false"
+_add_env_default "APP_DISPLAY_NAME"      "SBALKC Scheduler"
+_add_env_default "LOCAL_AUTH_ENABLED"   "true"
+_add_env_default "ENTRA_ENABLED"        "false"
 _add_env_default "SESSION_COOKIE_SECURE" "true"
+_add_env_default "URL_PREFIX"           "/sbalkcScheduler"
 
 # If this is the first upgrade that adds authentication, remind the operator
 # to create a local admin user before trying to log in.
@@ -226,8 +233,14 @@ info "Health check"
 echo "  Waiting for services to initialise..."
 sleep 5
 
-HEALTH_JSON="$(curl --silent --insecure --max-time 15 \
-    "https://localhost/sbalkcScheduler/api/health" || echo '{}')"
+if [[ -n "${SERVER_HOSTNAME}" ]]; then
+    HEALTH_JSON="$(curl --silent --insecure --max-time 15 \
+        --resolve "${SERVER_HOSTNAME}:443:127.0.0.1" \
+        "https://${SERVER_HOSTNAME}${URL_PREFIX}/api/health" || echo '{}')"
+else
+    HEALTH_JSON="$(curl --silent --insecure --max-time 15 \
+        "https://localhost${URL_PREFIX}/api/health" || echo '{}')"
+fi
 
 if printf '%s' "${HEALTH_JSON}" | grep -q '"ok": *true'; then
     echo

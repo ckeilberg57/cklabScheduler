@@ -317,6 +317,21 @@ fi
 echo
 echo "── Apache / TLS ───────────────────────────────────────────────────────"
 SERVER_HOSTNAME="$(prompt_required "Server hostname (used as Apache ServerName)")"
+
+echo
+echo "  URL path at which the scheduler will be served."
+echo "  Use only letters, digits, hyphens, and underscores."
+echo "  Examples: sbalkcScheduler (default), scheduler, healthcareScheduler, my-scheduler"
+while true; do
+    URL_PREFIX_RAW="$(prompt_default "Web application URL path" "sbalkcScheduler")"
+    if [[ "${URL_PREFIX_RAW}" =~ ^[A-Za-z0-9_-]+$ ]]; then
+        break
+    fi
+    echo "  Invalid: '${URL_PREFIX_RAW}' — use only letters, digits, hyphens, and underscores (no slashes, spaces, or special characters)." > /dev/tty 2>/dev/null || true
+done
+URL_PREFIX="/${URL_PREFIX_RAW}"
+echo "  Public URL will be: https://${SERVER_HOSTNAME}${URL_PREFIX}/"
+
 echo
 echo "  TLS options:"
 echo "    1) Provide paths to an existing certificate and key"
@@ -411,9 +426,9 @@ if prompt_yesno "Enable Microsoft Entra ID (Azure AD) authentication?" "N"; then
     ENTRA_TENANT_ID_VAL="$(prompt_required "Entra Tenant ID (from Azure portal)")"
     ENTRA_CLIENT_ID_VAL="$(prompt_required  "Entra Application (Client) ID")"
     ENTRA_CLIENT_SECRET_VAL="$(prompt_secret "Entra Client Secret [hidden]")"
-    _ENTRA_DEFAULT_REDIRECT="https://${SERVER_HOSTNAME}/sbalkcScheduler/auth/callback"
+    _ENTRA_DEFAULT_REDIRECT="https://${SERVER_HOSTNAME}${URL_PREFIX}/auth/callback"
     ENTRA_REDIRECT_URI_VAL="$(prompt_default "Entra redirect URI" "${_ENTRA_DEFAULT_REDIRECT}")"
-    _ENTRA_DEFAULT_POST_LOGOUT="https://${SERVER_HOSTNAME}/sbalkcScheduler/login"
+    _ENTRA_DEFAULT_POST_LOGOUT="https://${SERVER_HOSTNAME}${URL_PREFIX}/login"
     ENTRA_POST_LOGOUT_REDIRECT_URI_VAL="$(prompt_default "Post-logout redirect URI" "${_ENTRA_DEFAULT_POST_LOGOUT}")"
 
     echo
@@ -452,6 +467,11 @@ chmod 640 "${ENV_FILE}"
     write_env_line "CONTROL_DISPLAY_NAME" "${CONTROL_DISPLAY_NAME}"
     write_env_line "DIAL_PROTOCOL"        "${DIAL_PROTOCOL}"
     write_env_line "WEBRTC_BASE_URL"      "${WEBRTC_BASE_URL}"
+    printf '\n'
+
+    printf '# Web URL path and hostname (used by installer scripts)\n'
+    write_env_line "URL_PREFIX"      "${URL_PREFIX}"
+    write_env_line "SERVER_HOSTNAME" "${SERVER_HOSTNAME}"
     printf '\n'
 
     printf '# Scheduler\n'
@@ -548,6 +568,7 @@ info "Configuring Apache virtual host"
 cat > /etc/apache2/sites-available/sbalkcscheduler.conf <<APACHECONF
 # SBALKC Scheduler Apache virtual host
 # Written by deploy/install.sh — edit and re-run install.sh or edit directly.
+# URL prefix: ${URL_PREFIX}/
 
 # HTTP → HTTPS redirect
 <VirtualHost *:80>
@@ -562,23 +583,23 @@ cat > /etc/apache2/sites-available/sbalkcscheduler.conf <<APACHECONF
     SSLCertificateFile    ${CERT_FILE}
     SSLCertificateKeyFile ${KEY_FILE}
 
-    # Exact redirect: /sbalkcScheduler → /sbalkcScheduler/
-    RedirectMatch permanent ^/sbalkcScheduler$ /sbalkcScheduler/
+    # Exact redirect: ${URL_PREFIX} → ${URL_PREFIX}/
+    RedirectMatch permanent ^${URL_PREFIX}$ ${URL_PREFIX}/
 
-    # Reverse proxy to Gunicorn.  The /sbalkcScheduler/ prefix is preserved on
+    # Reverse proxy to Gunicorn.  The ${URL_PREFIX}/ prefix is preserved on
     # both sides so Gunicorn's SCRIPT_NAME processing can split the path correctly.
     #
     # Request flow:
-    #   Browser   GET /sbalkcScheduler/api/health
-    #   Apache    forwards /sbalkcScheduler/api/health to http://127.0.0.1:5080/sbalkcScheduler/api/health
-    #   Gunicorn  SCRIPT_NAME=/sbalkcScheduler → strips prefix → PATH_INFO=/api/health
-    #   Flask     routes /api/health; request.script_root=/sbalkcScheduler
+    #   Browser   GET ${URL_PREFIX}/api/health
+    #   Apache    forwards ${URL_PREFIX}/api/health to http://127.0.0.1:5080${URL_PREFIX}/api/health
+    #   Gunicorn  SCRIPT_NAME=${URL_PREFIX} → strips prefix → PATH_INFO=/api/health
+    #   Flask     routes /api/health; request.script_root=${URL_PREFIX}
     #
     # DO NOT change this to http://127.0.0.1:5080/ — that strips the prefix and
     # causes Gunicorn IndexError in http/wsgi.py.
     ProxyPreserveHost On
-    ProxyPass        /sbalkcScheduler/ http://127.0.0.1:5080/sbalkcScheduler/
-    ProxyPassReverse /sbalkcScheduler/ http://127.0.0.1:5080/sbalkcScheduler/
+    ProxyPass        ${URL_PREFIX}/ http://127.0.0.1:5080${URL_PREFIX}/
+    ProxyPassReverse ${URL_PREFIX}/ http://127.0.0.1:5080${URL_PREFIX}/
 
     RequestHeader set X-Forwarded-Proto "https"
 
@@ -634,14 +655,15 @@ echo "  Waiting for services to initialise..."
 sleep 5
 
 HEALTH_JSON="$(curl --silent --insecure --max-time 15 \
-    "https://localhost/sbalkcScheduler/api/health" || echo '{}')"
+    --resolve "${SERVER_HOSTNAME}:443:127.0.0.1" \
+    "https://${SERVER_HOSTNAME}${URL_PREFIX}/api/health" || echo '{}')"
 
 if printf '%s' "${HEALTH_JSON}" | grep -q '"ok": *true'; then
     echo
     echo "  ✓ Installation complete."
     echo
-    echo "  Application URL : https://${SERVER_HOSTNAME}/sbalkcScheduler/"
-    echo "  Health endpoint : https://${SERVER_HOSTNAME}/sbalkcScheduler/api/health"
+    echo "  Application URL : https://${SERVER_HOSTNAME}${URL_PREFIX}/"
+    echo "  Health endpoint : https://${SERVER_HOSTNAME}${URL_PREFIX}/api/health"
     if [[ "${LOCAL_AUTH_ENABLED_VAL}" == "true" ]]; then
         echo "  Sign in with the local admin account created during installation."
     else

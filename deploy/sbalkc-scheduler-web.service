@@ -13,7 +13,7 @@ ExecStart=/opt/sbalkcScheduler/venv/bin/gunicorn \
     --workers 2 \
     --threads 4 \
     --worker-class gthread \
-    --env SCRIPT_NAME=/sbalkcScheduler \
+    --env SCRIPT_NAME=${URL_PREFIX} \
     --access-logfile - \
     --error-logfile - \
     wsgi:application

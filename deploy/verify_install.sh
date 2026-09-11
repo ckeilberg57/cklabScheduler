@@ -23,8 +23,24 @@ VENV="${APP_DIR}/venv"
 SVC_USER="sbalkcscheduler"
 WEB_SVC="sbalkc-scheduler-web"
 WORKER_SVC="sbalkc-scheduler-worker"
-HOSTNAME_ARG="${1:-localhost}"
-HEALTH_URL="https://${HOSTNAME_ARG}/sbalkcScheduler/api/health"
+# Read URL_PREFIX from env file before HOSTNAME_ARG so both use the same source.
+# ENV_FILE is defined above; safe to reference here since this block runs after constants.
+URL_PREFIX=""
+if [[ -f "${ENV_FILE}" ]]; then
+    URL_PREFIX="$(grep '^URL_PREFIX=' "${ENV_FILE}" 2>/dev/null \
+        | sed 's/^URL_PREFIX="\?\([^"]*\)"\?$/\1/' | head -1 || echo '')"
+fi
+URL_PREFIX="${URL_PREFIX:-/sbalkcScheduler}"
+
+# Hostname: prefer CLI arg, then env file, then localhost fallback.
+HOSTNAME_ARG="${1:-}"
+if [[ -z "${HOSTNAME_ARG}" && -f "${ENV_FILE}" ]]; then
+    HOSTNAME_ARG="$(grep '^SERVER_HOSTNAME=' "${ENV_FILE}" 2>/dev/null \
+        | sed 's/^SERVER_HOSTNAME="\?\([^"]*\)"\?$/\1/' | head -1 || echo '')"
+fi
+HOSTNAME_ARG="${HOSTNAME_ARG:-localhost}"
+
+HEALTH_URL="https://${HOSTNAME_ARG}${URL_PREFIX}/api/health"
 
 # ── Counters and helpers ─────────────────────────────────────────────────────
 PASS=0
@@ -44,6 +60,16 @@ chk() {
         ok "${desc}"
     else
         fail "${desc}"
+    fi
+}
+
+# curl wrapper: forces DNS to 127.0.0.1 so Apache SNI/vhost selection uses the real
+# hostname rather than the loopback alias. Falls back to plain curl for localhost.
+_curl_local() {
+    if [[ "${HOSTNAME_ARG}" == "localhost" ]]; then
+        curl --silent --insecure "$@"
+    else
+        curl --silent --insecure --resolve "${HOSTNAME_ARG}:443:127.0.0.1" "$@"
     fi
 }
 
@@ -141,7 +167,7 @@ if [[ -f "${ENV_FILE}" ]]; then
     fi
     # Verify required keys are present (values are not inspected or printed)
     for key in REG_STATUS_HOST COMMAND_HOST MGMT_USER MGMT_PASS SECRET_KEY DB_PATH APP_DISPLAY_NAME \
-               LOCAL_AUTH_ENABLED ENTRA_ENABLED SESSION_COOKIE_SECURE; do
+               LOCAL_AUTH_ENABLED ENTRA_ENABLED SESSION_COOKIE_SECURE URL_PREFIX; do
         if grep -q "^${key}=" "${ENV_FILE}" 2>/dev/null; then
             ok "  Key present: ${key}"
         else
@@ -264,11 +290,15 @@ for svc in "${WEB_SVC}" "${WORKER_SVC}"; do
     fi
 done
 
-# Verify SCRIPT_NAME is set in the web unit file
-if grep -q 'SCRIPT_NAME=/sbalkcScheduler' /etc/systemd/system/${WEB_SVC}.service 2>/dev/null; then
-    ok "SCRIPT_NAME=/sbalkcScheduler in web unit"
+# Verify SCRIPT_NAME is configured in the web unit file.
+# New form: --env SCRIPT_NAME=${URL_PREFIX} (systemd expands from EnvironmentFile)
+# Legacy form: hardcoded value matching the configured prefix
+if grep -q 'SCRIPT_NAME=\${URL_PREFIX}' /etc/systemd/system/${WEB_SVC}.service 2>/dev/null; then
+    ok "Web unit: SCRIPT_NAME uses URL_PREFIX from env (= ${URL_PREFIX})"
+elif grep -q "SCRIPT_NAME=${URL_PREFIX}" /etc/systemd/system/${WEB_SVC}.service 2>/dev/null; then
+    ok "Web unit: SCRIPT_NAME=${URL_PREFIX} (hardcoded — consider reinstalling to use env-driven form)"
 else
-    fail "SCRIPT_NAME=/sbalkcScheduler missing from web unit"
+    fail "Web unit: SCRIPT_NAME not configured for ${URL_PREFIX} — reinstall or check service file"
 fi
 
 # Verify EnvironmentFile path is correct
@@ -313,20 +343,20 @@ chk "Apache config file exists" test -f /etc/apache2/sites-available/sbalkcsched
 # Spot-check critical directives in the installed config
 APACHE_CONF=/etc/apache2/sites-available/sbalkcscheduler.conf
 if [[ -f "${APACHE_CONF}" ]]; then
-    if grep -q 'ProxyPass .*/sbalkcScheduler/ http://127.0.0.1:5080/sbalkcScheduler/' "${APACHE_CONF}" 2>/dev/null; then
-        ok "ProxyPass /sbalkcScheduler/ → 127.0.0.1:5080/sbalkcScheduler/ (prefix preserved)"
+    if grep -q "ProxyPass .*${URL_PREFIX}/ http://127.0.0.1:5080${URL_PREFIX}/" "${APACHE_CONF}" 2>/dev/null; then
+        ok "ProxyPass ${URL_PREFIX}/ → 127.0.0.1:5080${URL_PREFIX}/ (prefix preserved)"
     else
-        fail "ProxyPass target must be http://127.0.0.1:5080/sbalkcScheduler/ (prefix preservation required for Gunicorn SCRIPT_NAME)"
+        fail "ProxyPass for ${URL_PREFIX}/ with prefix preservation missing from Apache config"
     fi
-    if grep -q 'ProxyPassReverse.*/sbalkcScheduler/' "${APACHE_CONF}" 2>/dev/null; then
-        ok "ProxyPassReverse /sbalkcScheduler/ present"
+    if grep -q "ProxyPassReverse.*${URL_PREFIX}/" "${APACHE_CONF}" 2>/dev/null; then
+        ok "ProxyPassReverse ${URL_PREFIX}/ present"
     else
-        fail "ProxyPassReverse missing from Apache config"
+        fail "ProxyPassReverse ${URL_PREFIX}/ missing from Apache config"
     fi
-    if grep -qE 'RedirectMatch.*\^/sbalkcScheduler\$' "${APACHE_CONF}" 2>/dev/null; then
-        ok "RedirectMatch anchored redirect present"
+    if grep -qE "RedirectMatch.*\\^${URL_PREFIX}\\$" "${APACHE_CONF}" 2>/dev/null; then
+        ok "RedirectMatch anchored redirect present (${URL_PREFIX})"
     else
-        fail "RedirectMatch ^/sbalkcScheduler$ missing from Apache config"
+        fail "RedirectMatch ^${URL_PREFIX}$ missing from Apache config"
     fi
     if grep -q 'ProxyPreserveHost On' "${APACHE_CONF}" 2>/dev/null; then
         ok "ProxyPreserveHost On present"
@@ -359,8 +389,8 @@ fi
 
 # ── 10. Health endpoint ───────────────────────────────────────────────────────
 hdr "Health Endpoint (${HEALTH_URL})"
-HEALTH_JSON="$(curl --silent --insecure --max-time 15 "${HEALTH_URL}" 2>/dev/null || echo '{}')"
-HTTP_CODE="$(curl --silent --insecure --max-time 15 --write-out '%{http_code}' --output /dev/null \
+HEALTH_JSON="$(_curl_local --max-time 15 "${HEALTH_URL}" 2>/dev/null || echo '{}')"
+HTTP_CODE="$(_curl_local --max-time 15 --write-out '%{http_code}' --output /dev/null \
     "${HEALTH_URL}" 2>/dev/null || echo '000')"
 
 if [[ "${HTTP_CODE}" == "200" ]]; then
@@ -579,10 +609,10 @@ else
 fi
 
 # ── Authentication route checks (via Apache) ────────────────────────────────
-BASE_URL="https://${HOSTNAME_ARG}/sbalkcScheduler"
+BASE_URL="https://${HOSTNAME_ARG}${URL_PREFIX}"
 
 # Login page must be publicly accessible (200)
-LOGIN_CODE="$(curl --silent --insecure --max-time 10 \
+LOGIN_CODE="$(_curl_local --max-time 10 \
     --write-out '%{http_code}' --output /dev/null \
     "${BASE_URL}/login" 2>/dev/null || echo '000')"
 if [[ "${LOGIN_CODE}" == "200" ]]; then
@@ -592,7 +622,7 @@ else
 fi
 
 # Unauthenticated UI root must redirect toward login (301 or 302)
-ROOT_CODE="$(curl --silent --insecure --max-time 10 \
+ROOT_CODE="$(_curl_local --max-time 10 \
     --write-out '%{http_code}' --output /dev/null \
     "${BASE_URL}/" 2>/dev/null || echo '000')"
 if [[ "${ROOT_CODE}" == "302" || "${ROOT_CODE}" == "301" ]]; then
@@ -602,7 +632,7 @@ else
 fi
 
 # Protected API must return 401, not an HTML redirect
-API_CODE="$(curl --silent --insecure --max-time 10 \
+API_CODE="$(_curl_local --max-time 10 \
     --write-out '%{http_code}' --output /dev/null \
     "${BASE_URL}/api/meetings" 2>/dev/null || echo '000')"
 if [[ "${API_CODE}" == "401" ]]; then
@@ -612,7 +642,7 @@ else
 fi
 
 # Confirm the 401 body is JSON, not an HTML redirect page
-API_BODY="$(curl --silent --insecure --max-time 10 \
+API_BODY="$(_curl_local --max-time 10 \
     "${BASE_URL}/api/meetings" 2>/dev/null || echo '')"
 if printf '%s' "${API_BODY}" | python3 -c "import sys,json; json.load(sys.stdin)" &>/dev/null; then
     ok "Unauthenticated API response is JSON (not HTML)"
