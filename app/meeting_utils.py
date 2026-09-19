@@ -211,6 +211,28 @@ def fetch_meeting_with_endpoints(conn, meeting_id, pexip=None):
     }
 
 
+def meetings_for_range(conn, start_date, end_date, pexip=None):
+    """Return all meetings overlapping the inclusive date range [start_date, end_date]."""
+    start_dt = datetime.fromisoformat(start_date).replace(
+        hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+    )
+    end_dt = (
+        datetime.fromisoformat(end_date).replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+        )
+        + timedelta(days=1)
+    )
+    rows = conn.execute(
+        """
+        SELECT id FROM meetings
+        WHERE start_time < ? AND end_time >= ?
+        ORDER BY start_time ASC
+        """,
+        (iso(end_dt), iso(start_dt)),
+    ).fetchall()
+    return [fetch_meeting_with_endpoints(conn, row["id"], pexip) for row in rows]
+
+
 def meetings_for_day(conn, day, pexip=None):
     start_local = datetime.fromisoformat(day)
     day_start = start_local.replace(

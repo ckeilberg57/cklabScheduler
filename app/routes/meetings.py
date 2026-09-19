@@ -1,7 +1,7 @@
 import json
 import sqlite3
 from contextlib import closing
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -10,14 +10,15 @@ from app.config import Settings
 from app.database import db
 from app.email_service import send_invites_for_meeting
 from app.meeting_utils import (
+    build_webrtc_join_url,
     fetch_meeting_with_endpoints,
     iso,
     meetings_for_day,
+    meetings_for_range,
     now_utc,
     parse_iso,
     safe_email,
     validate_or_make_alias,
-    build_webrtc_join_url,
 )
 
 meetings_bp = Blueprint("meetings", __name__)
@@ -32,6 +33,32 @@ def api_meetings():
             return jsonify({
                 "ok": True,
                 "items": meetings_for_day(conn, day, current_app.pexip),
+            })
+        except Exception as exc:
+            return jsonify({"ok": False, "items": [], "error": str(exc)}), 500
+
+
+@meetings_bp.route("/api/meetings/range")
+@login_required
+def api_meetings_range():
+    start = request.args.get("start")
+    end = request.args.get("end")
+    if not start or not end:
+        return jsonify({"ok": False, "error": "start and end dates are required"}), 400
+    try:
+        s = datetime.fromisoformat(start)
+        e = datetime.fromisoformat(end)
+        if e < s:
+            return jsonify({"ok": False, "error": "end must be >= start"}), 400
+        if (e - s).days > 366:
+            return jsonify({"ok": False, "error": "Date range cannot exceed one year"}), 400
+    except ValueError:
+        return jsonify({"ok": False, "error": "Invalid date format. Use YYYY-MM-DD"}), 400
+    with closing(db()) as conn:
+        try:
+            return jsonify({
+                "ok": True,
+                "items": meetings_for_range(conn, start, end, current_app.pexip),
             })
         except Exception as exc:
             return jsonify({"ok": False, "items": [], "error": str(exc)}), 500
@@ -260,6 +287,159 @@ def api_update_meeting(meeting_id):
 
         if invitees is not None and Settings.O365_ENABLED:
             send_invites_for_meeting(conn, meeting_id)
+
+        conn.commit()
+        return jsonify({
+            "ok": True,
+            "item": fetch_meeting_with_endpoints(conn, meeting_id, current_app.pexip),
+        })
+
+
+@meetings_bp.route("/api/meetings/<int:meeting_id>/edit", methods=["POST"])
+@login_required
+def api_edit_meeting(meeting_id):
+    """Comprehensive edit for scheduled or active meetings.
+
+    Scheduled: title, start_time, end_time, endpoints, invitees, notes.
+    Active (started/started_with_errors): end_time, notes only.
+    All other statuses are rejected.
+    """
+    payload = request.get_json(force=True, silent=True) or {}
+
+    with closing(db()) as conn:
+        row = conn.execute("SELECT * FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+        if not row:
+            return jsonify({"ok": False, "error": "Meeting not found"}), 404
+
+        status = row["status"]
+        is_active = status in ("started", "started_with_errors")
+        is_scheduled = status == "scheduled"
+
+        if not (is_scheduled or is_active):
+            return jsonify({
+                "ok": False,
+                "error": f"Meetings with status '{status}' cannot be edited",
+            }), 400
+
+        current = now_utc()
+
+        if is_scheduled:
+            title = (payload.get("title") or "").strip() or row["title"]
+            start_time_str = payload.get("start_time")
+            end_time_str = payload.get("end_time")
+            notes = (payload.get("notes") or "").strip()
+
+            if not start_time_str or not end_time_str:
+                return jsonify({"ok": False, "error": "start_time and end_time are required"}), 400
+
+            try:
+                start_dt = parse_iso(start_time_str)
+                end_dt = parse_iso(end_time_str)
+            except Exception as exc:
+                return jsonify({"ok": False, "error": f"Invalid time format: {exc}"}), 400
+
+            if end_dt <= start_dt:
+                return jsonify({"ok": False, "error": "end_time must be after start_time"}), 400
+
+            conn.execute(
+                "UPDATE meetings SET title=?, start_time=?, end_time=?, notes=?, updated_at=? WHERE id=?",
+                (title, iso(start_dt), iso(end_dt), notes, iso(current), meeting_id),
+            )
+
+            endpoints = payload.get("endpoints") or []
+            conn.execute("DELETE FROM meeting_endpoints WHERE meeting_id = ?", (meeting_id,))
+            for ep in endpoints:
+                endpoint_alias = (ep.get("endpoint_alias") or ep.get("alias") or "").strip()
+                if not endpoint_alias:
+                    continue
+                display_name = (ep.get("display_name") or endpoint_alias).strip()
+                role = (ep.get("role") or "host").lower()
+                conn.execute(
+                    """
+                    INSERT INTO meeting_endpoints
+                        (meeting_id, endpoint_alias, display_name, role, status)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (meeting_id, endpoint_alias, display_name, role, "scheduled"),
+                )
+
+            invitees = payload.get("invitees")
+            if invitees is not None:
+                existing_sent = {
+                    r["email"].lower(): r
+                    for r in conn.execute(
+                        "SELECT * FROM meeting_invitees WHERE meeting_id = ? AND email_status = 'sent'",
+                        (meeting_id,),
+                    ).fetchall()
+                }
+                conn.execute("DELETE FROM meeting_invitees WHERE meeting_id = ?", (meeting_id,))
+                updated_at = iso(now_utc())
+                seen = set()
+                for inv in invitees:
+                    email = safe_email(inv.get("email") if isinstance(inv, dict) else inv)
+                    if not email or email.lower() in seen:
+                        continue
+                    seen.add(email.lower())
+                    display_name = (
+                        (inv.get("display_name") or "") if isinstance(inv, dict) else ""
+                    ).strip()
+                    key = email.lower()
+                    if key in existing_sent:
+                        old = existing_sent[key]
+                        conn.execute(
+                            """
+                            INSERT INTO meeting_invitees
+                                (meeting_id, email, display_name, role, join_url,
+                                 email_status, email_response, sent_at, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                meeting_id, email, old["display_name"], old["role"],
+                                old["join_url"], "sent", old["email_response"],
+                                old["sent_at"], old["created_at"], updated_at,
+                            ),
+                        )
+                    else:
+                        join_url = build_webrtc_join_url(row["meeting_alias"], display_name or email)
+                        conn.execute(
+                            """
+                            INSERT INTO meeting_invitees
+                                (meeting_id, email, display_name, role, join_url,
+                                 email_status, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (meeting_id, email, display_name, "guest", join_url,
+                             "pending", updated_at, updated_at),
+                        )
+                if Settings.O365_ENABLED:
+                    send_invites_for_meeting(conn, meeting_id)
+
+        elif is_active:
+            end_time_str = payload.get("end_time")
+            notes = (payload.get("notes") or "").strip()
+
+            if not end_time_str:
+                return jsonify({"ok": False, "error": "end_time is required"}), 400
+
+            try:
+                end_dt = parse_iso(end_time_str)
+            except Exception as exc:
+                return jsonify({"ok": False, "error": f"Invalid time format: {exc}"}), 400
+
+            start_dt = parse_iso(row["start_time"])
+            if end_dt <= start_dt:
+                return jsonify({"ok": False, "error": "end_time must be after start_time"}), 400
+
+            if end_dt <= current:
+                return jsonify({
+                    "ok": False,
+                    "error": "Active meeting end time must be in the future",
+                }), 400
+
+            conn.execute(
+                "UPDATE meetings SET end_time=?, notes=?, updated_at=? WHERE id=?",
+                (iso(end_dt), notes, iso(current), meeting_id),
+            )
 
         conn.commit()
         return jsonify({

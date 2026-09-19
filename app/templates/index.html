@@ -61,7 +61,18 @@
             <button type="button" id="refreshEndpoints" class="ghost">Refresh</button>
           </div>
 
-          <div id="endpointList" class="endpoint-list"></div>
+          <div class="endpoint-search-wrap">
+            <input
+              type="search"
+              id="endpointSearch"
+              class="endpoint-search"
+              placeholder="Search endpoints…"
+              aria-label="Search registered endpoints"
+              autocomplete="off"
+            />
+          </div>
+
+          <div id="endpointList" class="endpoint-list" role="list" aria-label="Registered endpoints"></div>
 
           <button type="submit" class="primary wide">Create meeting</button>
         </form>
@@ -75,9 +86,9 @@
           <h2 id="headerDate">Today</h2>
         </div>
         <div class="toolbar">
-          <input type="date" id="dayPicker" />
+          <input type="date" id="dayPicker" aria-label="Select date" />
           <button class="secondary" id="jumpToday" type="button">Today</button>
-          <select id="exportRange" class="export-select">
+          <select id="exportRange" class="export-select" aria-label="Export range">
             <option value="selected_day">Export selected day</option>
             <option value="today">Export today</option>
             <option value="last_7">Export last 7 days</option>
@@ -116,57 +127,119 @@
             <p>Three-hour view centered one hour before now.</p>
           </div>
           <div class="toolbar">
-            <button class="ghost" id="timelineBack" type="button">←</button>
+            <button class="ghost icon-btn" id="timelineBack" type="button" aria-label="Shift timeline back one hour">←</button>
             <button class="ghost" id="timelineNow" type="button">Now</button>
-            <button class="ghost" id="timelineForward" type="button">→</button>
+            <button class="ghost icon-btn" id="timelineForward" type="button" aria-label="Shift timeline forward one hour">→</button>
           </div>
         </div>
-        <div id="timelineHours" class="timeline-hours"></div>
-        <div id="timelineCanvas" class="timeline-canvas"></div>
+        <div id="timelineHours" class="timeline-hours" aria-hidden="true"></div>
+        <div id="timelineCanvas" class="timeline-canvas" role="img" aria-label="Meeting timeline"></div>
       </section>
 
       <section class="meeting-list-wrap glass">
         <div class="section-head">
-          <h2>Meeting queue</h2>
-          <p>Hover timeline cards for actions or manage meetings below.</p>
+          <div>
+            <h2>Meeting List</h2>
+            <p id="meetingListDesc">Manage meetings below or switch to Calendar View.</p>
+          </div>
+          <div class="view-selector" role="group" aria-label="Meeting view">
+            <button class="view-btn active" id="viewListBtn" type="button" aria-pressed="true">Meeting List</button>
+            <button class="view-btn" id="viewCalendarBtn" type="button" aria-pressed="false">Calendar View</button>
+          </div>
         </div>
+
+        <!-- Meeting list (default view) -->
         <div id="meetingCards" class="meeting-cards"></div>
+
+        <!-- Calendar month view -->
+        <div id="calendarView" class="calendar-view" hidden>
+          <div class="calendar-nav" id="calendarNav"></div>
+          <div class="calendar-day-headers" id="calendarDayHeaders" aria-hidden="true"></div>
+          <div id="calendarGrid" class="calendar-grid" role="grid" aria-label="Monthly calendar"></div>
+        </div>
+
+        <!-- Calendar day view -->
+        <div id="dayView" class="day-view" hidden>
+          <div class="day-view-nav" id="dayViewNav"></div>
+          <div id="dayViewMeetings" class="day-view-meetings"></div>
+        </div>
       </section>
     </main>
   </div>
 
+  <!-- Endpoint template (used for both main picker and edit dialog) -->
   <template id="endpointTemplate">
-    <label class="endpoint-item">
+    <label class="endpoint-item" role="listitem">
       <input type="checkbox" class="endpoint-check" />
-      <div>
+      <div class="endpoint-info">
         <strong class="endpoint-name"></strong>
         <div class="endpoint-sub"></div>
       </div>
     </label>
   </template>
 
-  <dialog id="editDialog" class="edit-dialog">
+  <!-- Edit meeting dialog -->
+  <dialog id="editDialog" class="edit-dialog" aria-labelledby="editDialogTitle">
     <form method="dialog" class="edit-box">
       <div class="section-head">
-        <h3>Edit meeting endpoints</h3>
+        <h3 id="editDialogTitle">Edit meeting</h3>
         <button type="button" id="closeEdit" class="ghost">Close</button>
       </div>
       <input type="hidden" id="editMeetingId" />
-      <div id="editEndpointList" class="endpoint-list light-list"></div>
+      <input type="hidden" id="editMeetingStatus" />
+
+      <!-- Fields for scheduled meetings (full edit) -->
+      <div id="editScheduledFields">
+        <label>
+          Session title
+          <input type="text" id="editTitle" />
+        </label>
+        <div class="edit-time-row">
+          <label>
+            Start
+            <input type="datetime-local" id="editStartTime" />
+          </label>
+          <label>
+            End
+            <input type="datetime-local" id="editEndTime" />
+          </label>
+        </div>
+      </div>
+
+      <!-- Fields for active meetings (end time + notes only) -->
+      <div id="editActiveFields" hidden>
+        <p class="edit-active-notice">This meeting is active. Only the end time and notes can be changed.</p>
+        <label>
+          End time
+          <input type="datetime-local" id="editEndTimeActive" />
+        </label>
+      </div>
+
+      <!-- Endpoint selection (scheduled only) -->
+      <div id="editEndpointSection">
+        <div class="section-head slim">
+          <h3>Registered endpoints</h3>
+        </div>
+        <div id="editEndpointList" class="endpoint-list light-list"></div>
+      </div>
+
+      <!-- Notes (both statuses) -->
       <label>
         Notes
         <textarea id="editNotes" rows="3"></textarea>
       </label>
+
       <div class="dialog-actions">
-        <button type="button" id="saveEdit" class="primary">Save</button>
+        <button type="button" id="saveEdit" class="primary">Save changes</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="exportDialog" class="edit-dialog">
+  <!-- Export dialog -->
+  <dialog id="exportDialog" class="edit-dialog" aria-labelledby="exportDialogTitle">
     <form method="dialog" class="edit-box">
       <div class="section-head">
-        <h3>Export meeting report</h3>
+        <h3 id="exportDialogTitle">Export meeting report</h3>
         <button type="button" id="closeExport" class="ghost">Close</button>
       </div>
       <label>
