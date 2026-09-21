@@ -34,8 +34,9 @@ def api_meetings():
                 "ok": True,
                 "items": meetings_for_day(conn, day, current_app.pexip),
             })
-        except Exception as exc:
-            return jsonify({"ok": False, "items": [], "error": str(exc)}), 500
+        except Exception:
+            current_app.logger.exception("Failed to load meetings for day %s", day)
+            return jsonify({"ok": False, "items": [], "error": "Unable to load meetings"}), 500
 
 
 @meetings_bp.route("/api/meetings/range")
@@ -60,8 +61,9 @@ def api_meetings_range():
                 "ok": True,
                 "items": meetings_for_range(conn, start, end, current_app.pexip),
             })
-        except Exception as exc:
-            return jsonify({"ok": False, "items": [], "error": str(exc)}), 500
+        except Exception:
+            current_app.logger.exception("Failed to load meetings for range %s to %s", start, end)
+            return jsonify({"ok": False, "items": [], "error": "Unable to load meetings"}), 500
 
 
 @meetings_bp.route("/api/meetings", methods=["POST"])
@@ -81,12 +83,17 @@ def api_create_meeting():
 
     try:
         alias = validate_or_make_alias(alias)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    try:
         start_dt = parse_iso(start_time)
         end_dt = parse_iso(end_time)
-        if end_dt <= start_dt:
-            return jsonify({"ok": False, "error": "end_time must be after start_time"}), 400
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        return jsonify({"ok": False, "error": "Invalid date/time format"}), 400
+
+    if end_dt <= start_dt:
+        return jsonify({"ok": False, "error": "end_time must be after start_time"}), 400
 
     with closing(db()) as conn:
         try:
@@ -335,8 +342,8 @@ def api_edit_meeting(meeting_id):
             try:
                 start_dt = parse_iso(start_time_str)
                 end_dt = parse_iso(end_time_str)
-            except Exception as exc:
-                return jsonify({"ok": False, "error": f"Invalid time format: {exc}"}), 400
+            except Exception:
+                return jsonify({"ok": False, "error": "Invalid date/time format"}), 400
 
             if end_dt <= start_dt:
                 return jsonify({"ok": False, "error": "end_time must be after start_time"}), 400
@@ -423,8 +430,8 @@ def api_edit_meeting(meeting_id):
 
             try:
                 end_dt = parse_iso(end_time_str)
-            except Exception as exc:
-                return jsonify({"ok": False, "error": f"Invalid time format: {exc}"}), 400
+            except Exception:
+                return jsonify({"ok": False, "error": "Invalid date/time format"}), 400
 
             start_dt = parse_iso(row["start_time"])
             if end_dt <= start_dt:
@@ -481,8 +488,11 @@ def api_redial_endpoint(meeting_id):
             )
             conn.commit()
             return jsonify({"ok": True, "response": resp})
-        except Exception as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 500
+        except Exception:
+            current_app.logger.exception(
+                "Redial failed for endpoint %s in meeting %d", endpoint_alias, meeting_id
+            )
+            return jsonify({"ok": False, "error": "Redial failed"}), 500
         finally:
             if token:
                 pexip.release_control_token(meeting["meeting_alias"], token)
@@ -509,14 +519,17 @@ def api_resend_invitee(meeting_id, invitee_id):
             response = send_invitee_email(conn, meeting, invitee)
             conn.commit()
             return jsonify({"ok": True, "response": response})
-        except Exception as exc:
+        except Exception:
+            current_app.logger.exception(
+                "Failed to resend invite for invitee %d in meeting %d", invitee_id, meeting_id
+            )
             conn.execute(
                 """
                 UPDATE meeting_invitees
-                SET email_status = ?, email_response = ?, updated_at = ?
+                SET email_status = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                ("error", json.dumps({"error": str(exc)}), iso(now_utc()), invitee_id),
+                ("error", iso(now_utc()), invitee_id),
             )
             conn.commit()
-            return jsonify({"ok": False, "error": str(exc)}), 500
+            return jsonify({"ok": False, "error": "Failed to send invitation"}), 500

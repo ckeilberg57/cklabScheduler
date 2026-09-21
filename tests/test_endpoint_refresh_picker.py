@@ -182,13 +182,16 @@ class TestFailedRefreshDoesNotDestroyPickerState:
         assert data["items"] == []
 
     def test_pexip_failure_error_message_present(self, test_db):
+        """Pexip failure returns a safe generic error; raw exception must not leak (CWE-209)."""
         app, mock_pexip = _make_app(test_db, [])
         mock_pexip.list_registered_endpoints.side_effect = Exception("Connection refused")
         with app.test_client() as client:
             _login(client, test_db)
             resp = _fetch(client, test_db)
         data = resp.get_json()
-        assert "Connection refused" in data.get("error", "")
+        # CWE-209: exception text must not appear in the client response
+        assert "Connection refused" not in data.get("error", "")
+        assert "Unable to load endpoints" in data.get("error", "")
 
 
 # ── Test 5: API always returns live state (no stale cached result) ─────────────

@@ -225,7 +225,7 @@ class TestEndpointsApiRoute:
         assert data["items"] == []
 
     def test_pexip_api_error_returns_error_state_not_fallback(self, test_db):
-        """Pexip API failure → error response (ok=False), no fallback/demo endpoints."""
+        """Pexip API failure → generic error response (ok=False), no internal details leaked."""
         app, mock_pexip = make_app(test_db)
         mock_pexip.list_registered_endpoints.side_effect = Exception("Connection refused")
         with app.test_client() as client:
@@ -235,7 +235,9 @@ class TestEndpointsApiRoute:
         data = resp.get_json()
         assert resp.status_code == 500
         assert data["ok"] is False
-        assert "Connection refused" in data["error"]
+        # CWE-209: exception text must not appear in the client response
+        assert "Connection refused" not in data["error"]
+        assert "Unable to load endpoints" in data["error"]
         assert data["items"] == []
 
     def test_stale_alias_absent_from_api_response(self, test_db):

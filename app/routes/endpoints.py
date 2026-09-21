@@ -11,8 +11,9 @@ endpoints_bp = Blueprint("endpoints", __name__)
 def api_endpoints():
     try:
         return jsonify({"ok": True, "items": current_app.pexip.list_registered_endpoints()})
-    except Exception as exc:
-        return jsonify({"ok": False, "items": [], "error": str(exc)}), 500
+    except Exception:
+        current_app.logger.exception("Failed to load registered endpoints")
+        return jsonify({"ok": False, "items": [], "error": "Unable to load endpoints"}), 500
 
 
 @endpoints_bp.route("/api/config")
