@@ -179,6 +179,62 @@ class TestCalendarViewElements:
         assert "function renderCalendarMeetingDetail" in APP_JS
 
 
+class TestCalendarDefaultView:
+    """
+    Regression tests for Calendar View as the default/initial view.
+
+    These tests verify the JS source contracts that make Calendar View the
+    page-load default, without requiring a running browser.
+    """
+
+    def test_initial_calendar_view_state_is_month(self):
+        """State object must initialise calendarView to 'month', not 'list'."""
+        assert "calendarView: 'month'" in APP_JS
+
+    def test_initial_calendar_view_state_not_list(self):
+        """State object must NOT initialise calendarView to 'list'."""
+        assert "calendarView: 'list'" not in APP_JS
+
+    def test_set_calendar_view_month_called_in_init(self):
+        """setCalendarView('month') must be called during init() to establish the default."""
+        assert "setCalendarView('month')" in APP_JS
+
+    def test_load_month_meetings_called_in_init(self):
+        """loadMonthMeetings must be called during init() to populate the calendar on load."""
+        assert "loadMonthMeetings" in APP_JS
+
+    def test_set_calendar_view_list_available_for_navigation(self):
+        """setCalendarView('list') must still exist so Meeting List is reachable."""
+        assert "setCalendarView('list')" in APP_JS
+
+    def test_no_whole_cell_select_day_handler(self):
+        """The old whole-cell selectDay handler must not exist (empty days must be inert)."""
+        assert "selectDay" not in APP_JS
+
+    def test_calendar_selected_meeting_id_in_state(self):
+        """calendarSelectedMeetingId must be in the state object for per-meeting selection."""
+        assert "calendarSelectedMeetingId" in APP_JS
+
+    def test_back_to_calendar_navigates_to_month(self):
+        """The Back to Calendar button handler must call setCalendarView('month')."""
+        assert "setCalendarView('month')" in APP_JS
+
+    def test_meeting_list_btn_navigates_to_list(self):
+        """The Meeting List button handler must call setCalendarView('list')."""
+        assert "setCalendarView('list')" in APP_JS
+
+    def test_load_meetings_catch_uses_show_error_toast(self):
+        """Meeting label click failure must route to showErrorToast (not silent rejection)."""
+        assert "showErrorToast" in APP_JS
+
+    def test_endpoint_search_placeholder_uses_muted_color(self):
+        """Endpoint search placeholder must use var(--muted) for readable contrast."""
+        import pathlib
+        css = pathlib.Path(__file__).parent.parent / "app" / "static" / "styles.css"
+        css_text = css.read_text()
+        assert ".endpoint-search::placeholder { color: var(--muted); }" in css_text
+
+
 class TestEditDialogElements:
     def test_edit_scheduled_fields_present(self):
         assert 'id="editScheduledFields"' in INDEX_HTML

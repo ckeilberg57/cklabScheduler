@@ -8,7 +8,7 @@ const state = {
   adjustmentMinutesByMeeting: {},
 
   // Calendar
-  calendarView: 'list',      // 'list' | 'month' | 'meeting'
+  calendarView: 'month',     // 'list' | 'month' | 'meeting'
   calendarYear: new Date().getFullYear(),
   calendarMonth: new Date().getMonth(),
   calendarSelectedMeetingId: null,
@@ -1981,10 +1981,14 @@ async function init() {
   setDefaultTimes();
   injectInviteeSection();
 
+  // Set calendar as the default view immediately to prevent flash of meeting list
+  setCalendarView('month');
+
   try {
     await loadConfig();
     await loadEndpoints();
     await loadMeetings();
+    await loadMonthMeetings(state.calendarYear, state.calendarMonth);
   } catch (err) {
     showErrorToast(err);
   }
