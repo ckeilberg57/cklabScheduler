@@ -175,8 +175,8 @@ class TestCalendarViewElements:
     def test_load_month_meetings_function_exists(self):
         assert "function loadMonthMeetings" in APP_JS
 
-    def test_render_day_view_function_exists(self):
-        assert "function renderDayView" in APP_JS
+    def test_render_calendar_meeting_detail_function_exists(self):
+        assert "function renderCalendarMeetingDetail" in APP_JS
 
 
 class TestEditDialogElements:

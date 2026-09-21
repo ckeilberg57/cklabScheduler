@@ -600,3 +600,190 @@ class TestEndedStatusApiContract:
         m = resp.get_json()["items"][0]
         effective_status = m.get("timeline_status") or m.get("status")
         assert effective_status == "ended"
+
+
+# ── E. Calendar meeting detail API contract ────────────────────────────────────
+
+class TestCalendarMeetingDetailApiContract:
+    """
+    API contract tests for the calendar meeting-detail view (Change 2).
+
+    The frontend new 'meeting' state requires:
+      E1. Each meeting in the API response has a stable numeric `id` field.
+      E2. Two meetings on the same day have distinct IDs (selection is unambiguous).
+      E3. A meeting can be fetched by date and identified by its ID.
+      E4. The edit endpoint (POST /api/meetings/<id>/edit) still works correctly
+          after the calendar state rename (no server-side change, regression guard).
+      E5. Each meeting response includes a `status` field for CSS class derivation.
+      E6. Meeting ID is stable across repeated fetches of the same day.
+      E7. The meeting selected by ID is exactly the meeting that was created.
+    """
+
+    def test_meeting_response_includes_id_field(self, test_db):
+        """Every meeting in the API response must have an 'id' field (needed for selection)."""
+        app, _ = make_app(test_db)
+        now = now_utc()
+        create_user(test_db)
+        with patch.object(Settings, "DB_PATH", test_db):
+            with closing(db()) as conn:
+                insert_meeting(
+                    conn,
+                    start_time=iso(now + timedelta(hours=1)),
+                    end_time=iso(now + timedelta(hours=2)),
+                )
+        with app.test_client() as client:
+            login(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                today = now.strftime("%Y-%m-%d")
+                resp = client.get(f"/api/meetings?date={today}")
+        assert resp.status_code == 200
+        items = resp.get_json()["items"]
+        assert len(items) == 1
+        assert "id" in items[0]
+        assert isinstance(items[0]["id"], int)
+
+    def test_two_same_day_meetings_have_distinct_ids(self, test_db):
+        """Two meetings on the same day must have different IDs so selection is unambiguous."""
+        app, _ = make_app(test_db)
+        now = now_utc()
+        create_user(test_db)
+        with patch.object(Settings, "DB_PATH", test_db):
+            with closing(db()) as conn:
+                insert_meeting(
+                    conn,
+                    title="Morning standup",
+                    meeting_alias="docAAAAAAAAAAAAAAA",
+                    start_time=iso(now + timedelta(hours=1)),
+                    end_time=iso(now + timedelta(hours=2)),
+                )
+                insert_meeting(
+                    conn,
+                    title="Afternoon review",
+                    meeting_alias="docBBBBBBBBBBBBBBB",
+                    start_time=iso(now + timedelta(hours=3)),
+                    end_time=iso(now + timedelta(hours=4)),
+                )
+        with app.test_client() as client:
+            login(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                today = now.strftime("%Y-%m-%d")
+                resp = client.get(f"/api/meetings?date={today}")
+        items = resp.get_json()["items"]
+        assert len(items) == 2
+        ids = [m["id"] for m in items]
+        assert ids[0] != ids[1]
+
+    def test_meeting_identifiable_by_id_after_date_fetch(self, test_db):
+        """A meeting fetched by date can be uniquely identified by its ID."""
+        app, _ = make_app(test_db)
+        now = now_utc()
+        create_user(test_db)
+        with patch.object(Settings, "DB_PATH", test_db):
+            with closing(db()) as conn:
+                expected_id = insert_meeting(
+                    conn,
+                    title="Target meeting",
+                    start_time=iso(now + timedelta(hours=2)),
+                    end_time=iso(now + timedelta(hours=3)),
+                )
+        with app.test_client() as client:
+            login(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                today = now.strftime("%Y-%m-%d")
+                resp = client.get(f"/api/meetings?date={today}")
+        items = resp.get_json()["items"]
+        matched = [m for m in items if m["id"] == expected_id]
+        assert len(matched) == 1
+        assert matched[0]["title"] == "Target meeting"
+
+    def test_edit_endpoint_still_works_for_selected_meeting(self, test_db):
+        """POST /api/meetings/<id>/edit must still function (regression guard after JS rename)."""
+        app, _ = make_app(test_db)
+        now = now_utc()
+        create_user(test_db)
+        with patch.object(Settings, "DB_PATH", test_db):
+            with closing(db()) as conn:
+                mid = insert_meeting(
+                    conn,
+                    start_time=iso(now + timedelta(hours=1)),
+                    end_time=iso(now + timedelta(hours=2)),
+                )
+        with app.test_client() as client:
+            login(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                csrf = get_csrf_token(client, "/")
+                resp = client.post(
+                    f"/api/meetings/{mid}/edit",
+                    data=json.dumps({
+                        "start_time": iso(now + timedelta(hours=1, minutes=30)),
+                        "end_time": iso(now + timedelta(hours=2, minutes=30)),
+                    }),
+                    headers={"Content-Type": "application/json", "X-CSRFToken": csrf},
+                )
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+
+    def test_meeting_response_includes_status_field(self, test_db):
+        """Every meeting must expose a 'status' or 'timeline_status' field for CSS class derivation."""
+        app, _ = make_app(test_db)
+        now = now_utc()
+        create_user(test_db)
+        with patch.object(Settings, "DB_PATH", test_db):
+            with closing(db()) as conn:
+                insert_meeting(
+                    conn,
+                    start_time=iso(now + timedelta(hours=1)),
+                    end_time=iso(now + timedelta(hours=2)),
+                )
+        with app.test_client() as client:
+            login(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                today = now.strftime("%Y-%m-%d")
+                resp = client.get(f"/api/meetings?date={today}")
+        m = resp.get_json()["items"][0]
+        assert "status" in m or "timeline_status" in m
+
+    def test_meeting_id_stable_across_repeated_fetches(self, test_db):
+        """Meeting ID must be the same across two identical date-range fetches."""
+        app, _ = make_app(test_db)
+        now = now_utc()
+        create_user(test_db)
+        with patch.object(Settings, "DB_PATH", test_db):
+            with closing(db()) as conn:
+                insert_meeting(
+                    conn,
+                    start_time=iso(now + timedelta(hours=1)),
+                    end_time=iso(now + timedelta(hours=2)),
+                )
+        with app.test_client() as client:
+            login(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                today = now.strftime("%Y-%m-%d")
+                resp1 = client.get(f"/api/meetings?date={today}")
+                resp2 = client.get(f"/api/meetings?date={today}")
+        id1 = resp1.get_json()["items"][0]["id"]
+        id2 = resp2.get_json()["items"][0]["id"]
+        assert id1 == id2
+
+    def test_selected_meeting_matches_created_meeting(self, test_db):
+        """The meeting identified by calendarSelectedMeetingId must match the created record."""
+        app, _ = make_app(test_db)
+        now = now_utc()
+        create_user(test_db)
+        with patch.object(Settings, "DB_PATH", test_db):
+            with closing(db()) as conn:
+                mid = insert_meeting(
+                    conn,
+                    title="Specific title to verify",
+                    start_time=iso(now + timedelta(hours=5)),
+                    end_time=iso(now + timedelta(hours=6)),
+                )
+        with app.test_client() as client:
+            login(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                today = now.strftime("%Y-%m-%d")
+                resp = client.get(f"/api/meetings?date={today}")
+        items = resp.get_json()["items"]
+        found = next((m for m in items if m["id"] == mid), None)
+        assert found is not None
+        assert found["title"] == "Specific title to verify"

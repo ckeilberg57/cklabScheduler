@@ -177,7 +177,7 @@ a:focus-visible {
   outline: none;
   transition: border-color 0.15s, background 0.15s;
 }
-.endpoint-search::placeholder { color: rgba(219,227,238,0.80); }
+.endpoint-search::placeholder { color: var(--muted); }
 .endpoint-search:focus {
   background: rgba(255, 255, 255, 0.20);
   border-color: var(--sky-blue);

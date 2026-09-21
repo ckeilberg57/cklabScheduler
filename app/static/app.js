@@ -8,10 +8,10 @@ const state = {
   adjustmentMinutesByMeeting: {},
 
   // Calendar
-  calendarView: 'list',      // 'list' | 'month' | 'day'
+  calendarView: 'list',      // 'list' | 'month' | 'meeting'
   calendarYear: new Date().getFullYear(),
   calendarMonth: new Date().getMonth(),
-  calendarDayDate: null,     // Date object for selected day view
+  calendarSelectedMeetingId: null,
   monthMeetings: [],
 
   // Endpoint search
@@ -1050,12 +1050,12 @@ function setCalendarView(view) {
     if (sectionH2)   sectionH2.textContent   = 'Calendar View';
     if (sectionDesc) sectionDesc.textContent = 'Click any day to view its meetings.';
     renderMonthCalendar();
-  } else if (view === 'day') {
+  } else if (view === 'meeting') {
     dayEl.hidden = false;
     if (calBtn)  { calBtn.classList.add('active'); calBtn.setAttribute('aria-pressed', 'true'); }
-    if (sectionH2)   sectionH2.textContent   = 'Calendar — Day View';
-    if (sectionDesc) sectionDesc.textContent = 'Use ← Month to return to the monthly calendar.';
-    renderDayView();
+    if (sectionH2)   sectionH2.textContent   = 'Calendar — Meeting Detail';
+    if (sectionDesc) sectionDesc.textContent = 'Use ← Calendar to return to the monthly calendar.';
+    renderCalendarMeetingDetail();
   }
 }
 
@@ -1205,7 +1205,19 @@ function buildCalCell(year, month, dayNum, extraClass, meetingsByDay, todayStr, 
     const lbl = document.createElement('div');
     const ts = m.timeline_status || m.status;
     lbl.className = `cal-meeting-label ${ts}`;
+    lbl.setAttribute('role', 'button');
+    lbl.setAttribute('tabindex', '0');
+    lbl.setAttribute('aria-label', `View meeting: ${m.title || m.meeting_alias}`);
     lbl.textContent = m.title || m.meeting_alias;
+    const selectMeeting = () => {
+      $('#dayPicker').value = dateStr;
+      state.calendarSelectedMeetingId = m.id;
+      loadMeetings().then(() => setCalendarView('meeting')).catch(showErrorToast);
+    };
+    lbl.addEventListener('click', (e) => { e.stopPropagation(); selectMeeting(); });
+    lbl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); selectMeeting(); }
+    });
     cell.appendChild(lbl);
   });
   if (dayMeetings.length > maxVisible) {
@@ -1226,33 +1238,17 @@ function buildCalCell(year, month, dayNum, extraClass, meetingsByDay, todayStr, 
     cell.appendChild(dots);
   }
 
-  const selectDay = () => {
-    // Update the day picker and load meetings for that day
-    $('#dayPicker').value = dateStr;
-    state.calendarDayDate = new Date(`${dateStr}T12:00:00`);
-    loadMeetings().then(() => {
-      state.calendarView = 'day';
-      setCalendarView('day');
-    });
-  };
-
-  cell.addEventListener('click', selectDay);
-  cell.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectDay(); }
-  });
-
   return cell;
 }
 
-// ── Calendar: day view ────────────────────────────────────────────────────────
+// ── Calendar: meeting detail view ─────────────────────────────────────────────
 
-function renderDayView() {
+function renderCalendarMeetingDetail() {
   const navEl  = $('#dayViewNav');
   const listEl = $('#dayViewMeetings');
   if (!navEl || !listEl) return;
 
-  const dayDate = state.calendarDayDate || new Date();
-  const dayLabel = fullDateFmt.format(dayDate);
+  const m = state.meetings.find((mtg) => mtg.id === state.calendarSelectedMeetingId);
 
   // Navigation bar
   navEl.replaceChildren();
@@ -1260,7 +1256,7 @@ function renderDayView() {
   const backMonthBtn = document.createElement('button');
   backMonthBtn.type = 'button';
   backMonthBtn.className = 'cal-nav-btn';
-  backMonthBtn.textContent = '← Month';
+  backMonthBtn.textContent = '← Calendar';
   backMonthBtn.setAttribute('aria-label', 'Back to monthly calendar');
   backMonthBtn.onclick = () => setCalendarView('month');
 
@@ -1272,146 +1268,142 @@ function renderDayView() {
 
   const titleEl = document.createElement('span');
   titleEl.className = 'day-view-title';
-  titleEl.textContent = dayLabel;
+  titleEl.textContent = m ? (m.title || m.meeting_alias) : 'Meeting Detail';
 
   navEl.appendChild(backMonthBtn);
   navEl.appendChild(backListBtn);
   navEl.appendChild(titleEl);
 
-  // Meeting cards
+  // Meeting card
   listEl.replaceChildren();
 
-  const sorted = [...state.meetings].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
-
-  if (!sorted.length) {
+  if (!m) {
     const empty = document.createElement('div');
     empty.className = 'day-empty';
-    empty.textContent = 'No meetings scheduled for this day.';
+    empty.textContent = 'Meeting not found.';
     listEl.appendChild(empty);
     return;
   }
 
-  sorted.forEach((m) => {
-    const start = new Date(m.start_time);
-    const end   = new Date(m.end_time);
-    const timelineState = m.timeline_status || m.status;
+  const start = new Date(m.start_time);
+  const end   = new Date(m.end_time);
+  const timelineState = m.timeline_status || m.status;
 
-    const card = document.createElement('div');
-    card.className = 'day-card card';
+  const card = document.createElement('div');
+  card.className = 'day-card card';
 
-    const header = document.createElement('div');
-    header.className = 'day-card-header';
+  const header = document.createElement('div');
+  header.className = 'day-card-header';
 
-    const titleBlock = document.createElement('div');
-    const h3 = document.createElement('h3');
-    h3.textContent = m.title;
-    const metaP = document.createElement('p');
-    metaP.className = 'day-card-meta';
-    metaP.textContent = m.meeting_alias;
-    titleBlock.appendChild(h3);
-    titleBlock.appendChild(metaP);
+  const titleBlock = document.createElement('div');
+  const h3 = document.createElement('h3');
+  h3.textContent = m.title;
+  const metaP = document.createElement('p');
+  metaP.className = 'day-card-meta';
+  metaP.textContent = m.meeting_alias;
+  titleBlock.appendChild(h3);
+  titleBlock.appendChild(metaP);
 
-    const rightBlock = document.createElement('div');
-    const timeDiv = document.createElement('div');
-    timeDiv.className = 'day-card-time';
-    timeDiv.textContent = `${fmt.format(start)} – ${fmt.format(end)}`;
-    const pill = document.createElement('span');
-    pill.className = `pill ${timelineState}`;
-    pill.textContent = String(timelineState).replaceAll('_', ' ');
-    rightBlock.appendChild(timeDiv);
-    rightBlock.appendChild(pill);
+  const rightBlock = document.createElement('div');
+  const timeDiv = document.createElement('div');
+  timeDiv.className = 'day-card-time';
+  timeDiv.textContent = `${fmt.format(start)} – ${fmt.format(end)}`;
+  const pill = document.createElement('span');
+  pill.className = `pill ${timelineState}`;
+  pill.textContent = String(timelineState).replaceAll('_', ' ');
+  rightBlock.appendChild(timeDiv);
+  rightBlock.appendChild(pill);
 
-    header.appendChild(titleBlock);
-    header.appendChild(rightBlock);
-    card.appendChild(header);
+  header.appendChild(titleBlock);
+  header.appendChild(rightBlock);
+  card.appendChild(header);
 
-    // Endpoints
-    if ((m.endpoints || []).length) {
-      const epHead = document.createElement('div');
-      epHead.className = 'subhead';
-      epHead.textContent = 'Endpoints';
-      card.appendChild(epHead);
-      const epChips = document.createElement('div');
-      epChips.className = 'endpoint-chips';
-      (m.endpoints || []).forEach((ep) => {
-        const row = document.createElement('div');
-        row.className = 'chip-row';
-        const chip = document.createElement('span');
-        chip.className = 'chip';
-        chip.textContent = `${ep.display_name || ep.endpoint_alias} • ${statusLabel(ep, m)}`;
-        row.appendChild(chip);
-        epChips.appendChild(row);
-      });
-      card.appendChild(epChips);
-    }
-
-    // Invitees
-    if ((m.invitees || []).length) {
-      const invHead = document.createElement('div');
-      invHead.className = 'subhead';
-      invHead.textContent = 'Participants';
-      card.appendChild(invHead);
-      const invChips = document.createElement('div');
-      invChips.className = 'endpoint-chips';
-      buildInviteeChips(invChips, m.invitees, m.id);
-      card.appendChild(invChips);
-    }
-
-    // Notes
-    if (m.notes) {
-      const notesDiv = document.createElement('div');
-      notesDiv.className = 'muted';
-      notesDiv.style.marginTop = '8px';
-      notesDiv.textContent = m.notes;
-      card.appendChild(notesDiv);
-    }
-
-    // Actions
-    const actions = document.createElement('div');
-    actions.className = 'card-actions';
-    if (timelineState !== 'ended') {
-      actions.appendChild(adjustmentControl(m.id));
-    }
-    if (canEditMeeting(m)) {
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.className = 'tiny-btn';
-      editBtn.textContent = 'Edit';
-      editBtn.onclick = () => openEdit(m.id);
-      actions.appendChild(editBtn);
-    }
-    if (timelineState === 'ended') {
-      const exportLink = document.createElement('a');
-      exportLink.className = 'tiny-btn';
-      exportLink.href = `${API_BASE}/meetings/${m.id}/export`;
-      exportLink.target = '_blank';
-      exportLink.rel = 'noopener noreferrer';
-      exportLink.textContent = 'Export';
-      actions.appendChild(exportLink);
-    }
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.className = 'tiny-btn';
-    deleteBtn.textContent = 'Delete';
-    deleteBtn.onclick = () => deleteMeeting(m.id).then(() => renderDayView());
-    actions.appendChild(deleteBtn);
-
-    actions.querySelectorAll('[data-action="adjust-range"]').forEach((el) => {
-      el.addEventListener('input', () => setAdjustmentMinutes(m.id, el.value));
+  // Endpoints
+  if ((m.endpoints || []).length) {
+    const epHead = document.createElement('div');
+    epHead.className = 'subhead';
+    epHead.textContent = 'Endpoints';
+    card.appendChild(epHead);
+    const epChips = document.createElement('div');
+    epChips.className = 'endpoint-chips';
+    (m.endpoints || []).forEach((ep) => {
+      const row = document.createElement('div');
+      row.className = 'chip-row';
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = `${ep.display_name || ep.endpoint_alias} • ${statusLabel(ep, m)}`;
+      row.appendChild(chip);
+      epChips.appendChild(row);
     });
-    actions.querySelectorAll('[data-action="adjust-apply"]').forEach((el) => {
-      el.addEventListener('click', () => adjustMeeting(m.id, getAdjustmentMinutes(m.id)));
-    });
-    actions.querySelectorAll('.resend-invite-btn').forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        resendInvite(btn.dataset.meetingId, btn.dataset.inviteeId);
-      };
-    });
+    card.appendChild(epChips);
+  }
 
-    card.appendChild(actions);
-    listEl.appendChild(card);
+  // Invitees
+  if ((m.invitees || []).length) {
+    const invHead = document.createElement('div');
+    invHead.className = 'subhead';
+    invHead.textContent = 'Participants';
+    card.appendChild(invHead);
+    const invChips = document.createElement('div');
+    invChips.className = 'endpoint-chips';
+    buildInviteeChips(invChips, m.invitees, m.id);
+    card.appendChild(invChips);
+  }
+
+  // Notes
+  if (m.notes) {
+    const notesDiv = document.createElement('div');
+    notesDiv.className = 'muted';
+    notesDiv.style.marginTop = '8px';
+    notesDiv.textContent = m.notes;
+    card.appendChild(notesDiv);
+  }
+
+  // Actions
+  const actions = document.createElement('div');
+  actions.className = 'card-actions';
+  if (timelineState !== 'ended') {
+    actions.appendChild(adjustmentControl(m.id));
+  }
+  if (canEditMeeting(m)) {
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'tiny-btn';
+    editBtn.textContent = 'Edit';
+    editBtn.onclick = () => openEdit(m.id);
+    actions.appendChild(editBtn);
+  }
+  if (timelineState === 'ended') {
+    const exportLink = document.createElement('a');
+    exportLink.className = 'tiny-btn';
+    exportLink.href = `${API_BASE}/meetings/${m.id}/export`;
+    exportLink.target = '_blank';
+    exportLink.rel = 'noopener noreferrer';
+    exportLink.textContent = 'Export';
+    actions.appendChild(exportLink);
+  }
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'tiny-btn';
+  deleteBtn.textContent = 'Delete';
+  deleteBtn.onclick = () => deleteMeeting(m.id).then(() => setCalendarView('month'));
+  actions.appendChild(deleteBtn);
+
+  actions.querySelectorAll('[data-action="adjust-range"]').forEach((el) => {
+    el.addEventListener('input', () => setAdjustmentMinutes(m.id, el.value));
   });
+  actions.querySelectorAll('[data-action="adjust-apply"]').forEach((el) => {
+    el.addEventListener('click', () => adjustMeeting(m.id, getAdjustmentMinutes(m.id)));
+  });
+  actions.querySelectorAll('.resend-invite-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      resendInvite(btn.dataset.meetingId, btn.dataset.inviteeId);
+    };
+  });
+
+  card.appendChild(actions);
+  listEl.appendChild(card);
 }
 
 // ── Meeting CRUD operations ───────────────────────────────────────────────────
@@ -1811,7 +1803,7 @@ async function saveEdit() {
     showToast('Meeting updated.');
     closeEdit();
     await loadMeetings();
-    if (state.calendarView === 'day') renderDayView();
+    if (state.calendarView === 'meeting') renderCalendarMeetingDetail();
   } catch (err) {
     showErrorToast(err);
   } finally {
@@ -1952,7 +1944,7 @@ async function init() {
     state.calendarYear  = today.getFullYear();
     state.calendarMonth = today.getMonth();
     await loadMeetings();
-    if (state.calendarView === 'month' || state.calendarView === 'day') {
+    if (state.calendarView === 'month' || state.calendarView === 'meeting') {
       await loadMonthMeetings(state.calendarYear, state.calendarMonth);
       setCalendarView('month');
     }
@@ -1960,9 +1952,6 @@ async function init() {
 
   $('#dayPicker').addEventListener('change', () => {
     loadMeetings();
-    if (state.calendarView === 'day') {
-      state.calendarDayDate = new Date(`${$('#dayPicker').value}T12:00:00`);
-    }
   });
 
   $('#timelineBack').onclick    = () => shiftTimeline(-1);
@@ -2004,7 +1993,7 @@ async function init() {
   setInterval(async () => {
     try {
       await loadMeetings();
-      if (state.calendarView === 'day') renderDayView();
+      if (state.calendarView === 'meeting') renderCalendarMeetingDetail();
     } catch (err) {
       console.error(err);
     }
