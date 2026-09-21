@@ -13,7 +13,7 @@ is preserved. They do not test CSS colour values or DOM manipulation directly.
 import json
 import os
 from contextlib import closing
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -284,9 +284,10 @@ class TestEditDialogFreeBusyApiContract:
     def test_meeting_includes_start_end_times_for_overlap_check(self, test_db):
         """Meeting response includes start_time and end_time for client-side overlap check."""
         app, _ = make_app(test_db)
-        now = now_utc()
-        start = iso(now + timedelta(hours=1))
-        end = iso(now + timedelta(hours=2))
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
+        start = iso(noon_utc)
+        end = iso(noon_utc + timedelta(hours=1))
         create_user(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
             with closing(db()) as conn:
@@ -294,7 +295,7 @@ class TestEditDialogFreeBusyApiContract:
         with app.test_client() as client:
             login(client, test_db)
             with patch.object(Settings, "DB_PATH", test_db):
-                today = now.strftime("%Y-%m-%d")
+                today = today_date.isoformat()
                 resp = client.get(f"/api/meetings?date={today}")
         m = resp.get_json()["items"][0]
         assert "start_time" in m
@@ -303,16 +304,17 @@ class TestEditDialogFreeBusyApiContract:
     def test_two_meetings_both_returned_for_conflict_detection(self, test_db):
         """Two overlapping meetings are both in the list so client detects conflicts."""
         app, _ = make_app(test_db)
-        now = now_utc()
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
         create_user(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
             with closing(db()) as conn:
-                insert_meeting(conn, title="M1", meeting_alias="docuiremediation01", start_time=iso(now), end_time=iso(now + timedelta(hours=2)))
-                insert_meeting(conn, title="M2", meeting_alias="docuiremediation02", start_time=iso(now + timedelta(hours=1)), end_time=iso(now + timedelta(hours=3)))
+                insert_meeting(conn, title="M1", meeting_alias="docuiremediation01", start_time=iso(noon_utc), end_time=iso(noon_utc + timedelta(hours=2)))
+                insert_meeting(conn, title="M2", meeting_alias="docuiremediation02", start_time=iso(noon_utc + timedelta(hours=1)), end_time=iso(noon_utc + timedelta(hours=3)))
         with app.test_client() as client:
             login(client, test_db)
             with patch.object(Settings, "DB_PATH", test_db):
-                today = now.strftime("%Y-%m-%d")
+                today = today_date.isoformat()
                 resp = client.get(f"/api/meetings?date={today}")
         assert len(resp.get_json()["items"]) == 2
 
@@ -492,20 +494,21 @@ class TestEndedStatusApiContract:
     def test_scheduled_meeting_status_is_not_ended(self, test_db):
         """A scheduled meeting must NOT have status='ended' (regression guard)."""
         app, _ = make_app(test_db)
-        now = now_utc()
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
         create_user(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
             with closing(db()) as conn:
                 insert_meeting(
                     conn,
                     status="scheduled",
-                    start_time=iso(now + timedelta(hours=1)),
-                    end_time=iso(now + timedelta(hours=2)),
+                    start_time=iso(noon_utc),
+                    end_time=iso(noon_utc + timedelta(hours=1)),
                 )
         with app.test_client() as client:
             login(client, test_db)
             with patch.object(Settings, "DB_PATH", test_db):
-                today = now.strftime("%Y-%m-%d")
+                today = today_date.isoformat()
                 resp = client.get(f"/api/meetings?date={today}")
         m = resp.get_json()["items"][0]
         status = m.get("timeline_status") or m.get("status")
@@ -536,23 +539,24 @@ class TestEndedStatusApiContract:
     def test_multiple_status_types_in_one_day_all_returned(self, test_db):
         """Multiple meetings with different statuses all appear in daily list."""
         app, _ = make_app(test_db)
-        now = now_utc()
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
         create_user(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
             with closing(db()) as conn:
                 insert_meeting(conn, title="Scheduled", meeting_alias="docuiremediation03",
                                status="scheduled",
-                               start_time=iso(now + timedelta(hours=1)),
-                               end_time=iso(now + timedelta(hours=2)))
+                               start_time=iso(noon_utc),
+                               end_time=iso(noon_utc + timedelta(hours=1)))
                 insert_meeting(conn, title="Ended", meeting_alias="docuiremediation04",
                                status="ended",
-                               start_time=iso(now - timedelta(hours=2)),
-                               end_time=iso(now - timedelta(hours=1)),
-                               ended_at=iso(now - timedelta(hours=1)))
+                               start_time=iso(noon_utc - timedelta(hours=3)),
+                               end_time=iso(noon_utc - timedelta(hours=2)),
+                               ended_at=iso(noon_utc - timedelta(hours=2)))
         with app.test_client() as client:
             login(client, test_db)
             with patch.object(Settings, "DB_PATH", test_db):
-                today = now.strftime("%Y-%m-%d")
+                today = today_date.isoformat()
                 resp = client.get(f"/api/meetings?date={today}")
         statuses = {m.get("status") for m in resp.get_json()["items"]}
         assert "scheduled" in statuses
@@ -622,19 +626,20 @@ class TestCalendarMeetingDetailApiContract:
     def test_meeting_response_includes_id_field(self, test_db):
         """Every meeting in the API response must have an 'id' field (needed for selection)."""
         app, _ = make_app(test_db)
-        now = now_utc()
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
         create_user(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
             with closing(db()) as conn:
                 insert_meeting(
                     conn,
-                    start_time=iso(now + timedelta(hours=1)),
-                    end_time=iso(now + timedelta(hours=2)),
+                    start_time=iso(noon_utc),
+                    end_time=iso(noon_utc + timedelta(hours=1)),
                 )
         with app.test_client() as client:
             login(client, test_db)
             with patch.object(Settings, "DB_PATH", test_db):
-                today = now.strftime("%Y-%m-%d")
+                today = today_date.isoformat()
                 resp = client.get(f"/api/meetings?date={today}")
         assert resp.status_code == 200
         items = resp.get_json()["items"]
@@ -645,7 +650,8 @@ class TestCalendarMeetingDetailApiContract:
     def test_two_same_day_meetings_have_distinct_ids(self, test_db):
         """Two meetings on the same day must have different IDs so selection is unambiguous."""
         app, _ = make_app(test_db)
-        now = now_utc()
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
         create_user(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
             with closing(db()) as conn:
@@ -653,20 +659,20 @@ class TestCalendarMeetingDetailApiContract:
                     conn,
                     title="Morning standup",
                     meeting_alias="docAAAAAAAAAAAAAAA",
-                    start_time=iso(now + timedelta(hours=1)),
-                    end_time=iso(now + timedelta(hours=2)),
+                    start_time=iso(noon_utc),
+                    end_time=iso(noon_utc + timedelta(hours=1)),
                 )
                 insert_meeting(
                     conn,
                     title="Afternoon review",
                     meeting_alias="docBBBBBBBBBBBBBBB",
-                    start_time=iso(now + timedelta(hours=3)),
-                    end_time=iso(now + timedelta(hours=4)),
+                    start_time=iso(noon_utc + timedelta(hours=2)),
+                    end_time=iso(noon_utc + timedelta(hours=3)),
                 )
         with app.test_client() as client:
             login(client, test_db)
             with patch.object(Settings, "DB_PATH", test_db):
-                today = now.strftime("%Y-%m-%d")
+                today = today_date.isoformat()
                 resp = client.get(f"/api/meetings?date={today}")
         items = resp.get_json()["items"]
         assert len(items) == 2
@@ -676,20 +682,21 @@ class TestCalendarMeetingDetailApiContract:
     def test_meeting_identifiable_by_id_after_date_fetch(self, test_db):
         """A meeting fetched by date can be uniquely identified by its ID."""
         app, _ = make_app(test_db)
-        now = now_utc()
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
         create_user(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
             with closing(db()) as conn:
                 expected_id = insert_meeting(
                     conn,
                     title="Target meeting",
-                    start_time=iso(now + timedelta(hours=2)),
-                    end_time=iso(now + timedelta(hours=3)),
+                    start_time=iso(noon_utc),
+                    end_time=iso(noon_utc + timedelta(hours=1)),
                 )
         with app.test_client() as client:
             login(client, test_db)
             with patch.object(Settings, "DB_PATH", test_db):
-                today = now.strftime("%Y-%m-%d")
+                today = today_date.isoformat()
                 resp = client.get(f"/api/meetings?date={today}")
         items = resp.get_json()["items"]
         matched = [m for m in items if m["id"] == expected_id]
@@ -726,19 +733,20 @@ class TestCalendarMeetingDetailApiContract:
     def test_meeting_response_includes_status_field(self, test_db):
         """Every meeting must expose a 'status' or 'timeline_status' field for CSS class derivation."""
         app, _ = make_app(test_db)
-        now = now_utc()
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
         create_user(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
             with closing(db()) as conn:
                 insert_meeting(
                     conn,
-                    start_time=iso(now + timedelta(hours=1)),
-                    end_time=iso(now + timedelta(hours=2)),
+                    start_time=iso(noon_utc),
+                    end_time=iso(noon_utc + timedelta(hours=1)),
                 )
         with app.test_client() as client:
             login(client, test_db)
             with patch.object(Settings, "DB_PATH", test_db):
-                today = now.strftime("%Y-%m-%d")
+                today = today_date.isoformat()
                 resp = client.get(f"/api/meetings?date={today}")
         m = resp.get_json()["items"][0]
         assert "status" in m or "timeline_status" in m
@@ -746,19 +754,20 @@ class TestCalendarMeetingDetailApiContract:
     def test_meeting_id_stable_across_repeated_fetches(self, test_db):
         """Meeting ID must be the same across two identical date-range fetches."""
         app, _ = make_app(test_db)
-        now = now_utc()
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
         create_user(test_db)
         with patch.object(Settings, "DB_PATH", test_db):
             with closing(db()) as conn:
                 insert_meeting(
                     conn,
-                    start_time=iso(now + timedelta(hours=1)),
-                    end_time=iso(now + timedelta(hours=2)),
+                    start_time=iso(noon_utc),
+                    end_time=iso(noon_utc + timedelta(hours=1)),
                 )
         with app.test_client() as client:
             login(client, test_db)
             with patch.object(Settings, "DB_PATH", test_db):
-                today = now.strftime("%Y-%m-%d")
+                today = today_date.isoformat()
                 resp1 = client.get(f"/api/meetings?date={today}")
                 resp2 = client.get(f"/api/meetings?date={today}")
         id1 = resp1.get_json()["items"][0]["id"]
@@ -768,20 +777,21 @@ class TestCalendarMeetingDetailApiContract:
     def test_selected_meeting_matches_created_meeting(self, test_db):
         """The meeting identified by calendarSelectedMeetingId must match the created record."""
         app, _ = make_app(test_db)
-        now = now_utc()
         create_user(test_db)
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
         with patch.object(Settings, "DB_PATH", test_db):
             with closing(db()) as conn:
                 mid = insert_meeting(
                     conn,
                     title="Specific title to verify",
-                    start_time=iso(now + timedelta(hours=5)),
-                    end_time=iso(now + timedelta(hours=6)),
+                    start_time=iso(noon_utc),
+                    end_time=iso(noon_utc + timedelta(hours=1)),
                 )
         with app.test_client() as client:
             login(client, test_db)
             with patch.object(Settings, "DB_PATH", test_db):
-                today = now.strftime("%Y-%m-%d")
+                today = today_date.isoformat()
                 resp = client.get(f"/api/meetings?date={today}")
         items = resp.get_json()["items"]
         found = next((m for m in items if m["id"] == mid), None)
