@@ -1386,7 +1386,7 @@ function renderCalendarMeetingDetail() {
   deleteBtn.type = 'button';
   deleteBtn.className = 'tiny-btn';
   deleteBtn.textContent = 'Delete';
-  deleteBtn.onclick = () => deleteMeeting(m.id).then(() => setCalendarView('month'));
+  deleteBtn.onclick = () => deleteMeeting(m.id);
   actions.appendChild(deleteBtn);
 
   actions.querySelectorAll('[data-action="adjust-range"]').forEach((el) => {
@@ -1438,7 +1438,7 @@ async function createMeeting(e) {
     $('#meetingAlias').value = '';
     state.invitees = [];
     renderInvitees();
-    await loadMeetings();
+    await refreshAfterMutation();
   } catch (err) {
     showErrorToast(err);
   }
@@ -1457,7 +1457,7 @@ async function adjustMeeting(id, minutes) {
     });
     showToast(value > 0 ? `Meeting extended by ${value} minutes.` : `Meeting shortened by ${Math.abs(value)} minutes.`);
     state.adjustmentMinutesByMeeting[id] = 15;
-    await loadMeetings();
+    await refreshAfterMutation();
   } catch (err) {
     showErrorToast(err);
   }
@@ -1467,7 +1467,7 @@ async function deleteMeeting(id) {
   try {
     await api(`/meetings/${id}/delete`, { method: 'POST' });
     showToast('Meeting deleted.');
-    await loadMeetings();
+    await refreshAfterMutation();
   } catch (err) {
     showErrorToast(err);
   }
@@ -1480,9 +1480,24 @@ async function redialEndpoint(meetingId, endpointAlias) {
       body: JSON.stringify({ endpoint_alias: endpointAlias }),
     });
     showToast(`Dial again requested for ${endpointAlias}`);
-    await loadMeetings();
+    await refreshAfterMutation();
   } catch (err) {
     showErrorToast(err);
+  }
+}
+
+async function refreshAfterMutation() {
+  await loadMeetings();
+  if (state.calendarView === 'month' || state.calendarView === 'meeting') {
+    await loadMonthMeetings(state.calendarYear, state.calendarMonth);
+    if (state.calendarView === 'meeting') {
+      const stillExists = state.meetings.find((m) => m.id === state.calendarSelectedMeetingId);
+      if (stillExists) {
+        renderCalendarMeetingDetail();
+      } else {
+        setCalendarView('month');
+      }
+    }
   }
 }
 
@@ -1802,8 +1817,7 @@ async function saveEdit() {
     });
     showToast('Meeting updated.');
     closeEdit();
-    await loadMeetings();
-    if (state.calendarView === 'meeting') renderCalendarMeetingDetail();
+    await refreshAfterMutation();
   } catch (err) {
     showErrorToast(err);
   } finally {

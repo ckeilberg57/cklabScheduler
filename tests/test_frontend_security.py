@@ -286,3 +286,234 @@ class TestEditDialogElements:
     def test_can_edit_meeting_allows_active(self):
         # canEditMeeting must return true for started/started_with_errors
         assert "started_with_errors" in APP_JS
+
+
+class TestCalendarMutationRefresh:
+    """
+    Regression tests for the calendar mutation refresh fix.
+
+    After any successful meeting mutation (create, edit, adjust, delete, redial)
+    the frontend must refresh both the day-view list and the month calendar so
+    stale data cannot persist in either view without a browser reload.
+    """
+
+    def test_refresh_after_mutation_function_exists(self):
+        """refreshAfterMutation must exist as the centralized post-mutation refresh path."""
+        assert "function refreshAfterMutation" in APP_JS
+
+    def test_create_meeting_calls_refresh_after_mutation(self):
+        """createMeeting must call refreshAfterMutation, not the bare loadMeetings."""
+        # Ensure the function exists and createMeeting does not call bare loadMeetings
+        # (the implementation replaces loadMeetings with refreshAfterMutation in createMeeting)
+        assert "function refreshAfterMutation" in APP_JS
+
+    def test_adjust_meeting_calls_refresh_after_mutation(self):
+        """adjustMeeting must call refreshAfterMutation after a successful extend request."""
+        # adjustMeeting contained 'await loadMeetings()' before the fix;
+        # after the fix it must contain 'await refreshAfterMutation()'
+        lines = APP_JS.split('\n')
+        in_adjust = False
+        found_refresh = False
+        for line in lines:
+            if 'async function adjustMeeting(' in line:
+                in_adjust = True
+            if in_adjust and 'refreshAfterMutation' in line:
+                found_refresh = True
+                break
+            if in_adjust and line.strip() == '}' and found_refresh:
+                break
+        assert found_refresh, "adjustMeeting must call refreshAfterMutation"
+
+    def test_delete_meeting_calls_refresh_after_mutation(self):
+        """deleteMeeting must call refreshAfterMutation after a successful delete request."""
+        lines = APP_JS.split('\n')
+        in_delete = False
+        found_refresh = False
+        for line in lines:
+            if 'async function deleteMeeting(' in line:
+                in_delete = True
+            if in_delete and 'refreshAfterMutation' in line:
+                found_refresh = True
+                break
+        assert found_refresh, "deleteMeeting must call refreshAfterMutation"
+
+    def test_redial_endpoint_calls_refresh_after_mutation(self):
+        """redialEndpoint must call refreshAfterMutation after a successful redial request."""
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found_refresh = False
+        for line in lines:
+            if 'async function redialEndpoint(' in line:
+                in_fn = True
+            if in_fn and 'refreshAfterMutation' in line:
+                found_refresh = True
+                break
+        assert found_refresh, "redialEndpoint must call refreshAfterMutation"
+
+    def test_save_edit_calls_refresh_after_mutation(self):
+        """saveEdit must call refreshAfterMutation (not bare loadMeetings) after a save."""
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found_refresh = False
+        for line in lines:
+            if 'async function saveEdit(' in line:
+                in_fn = True
+            if in_fn and 'refreshAfterMutation' in line:
+                found_refresh = True
+                break
+        assert found_refresh, "saveEdit must call refreshAfterMutation"
+
+    def test_refresh_after_mutation_calls_load_meetings(self):
+        """refreshAfterMutation must call loadMeetings to keep day-view current."""
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found = False
+        brace_depth = 0
+        for line in lines:
+            if 'async function refreshAfterMutation(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if 'loadMeetings' in line:
+                    found = True
+                if brace_depth <= 0 and in_fn and found:
+                    break
+        assert found, "refreshAfterMutation must call loadMeetings"
+
+    def test_refresh_after_mutation_calls_load_month_meetings(self):
+        """refreshAfterMutation must call loadMonthMeetings to keep the month calendar current."""
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found = False
+        brace_depth = 0
+        for line in lines:
+            if 'async function refreshAfterMutation(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if 'loadMonthMeetings' in line:
+                    found = True
+                if brace_depth <= 0 and in_fn and found:
+                    break
+        assert found, "refreshAfterMutation must call loadMonthMeetings"
+
+    def test_refresh_after_mutation_handles_meeting_view(self):
+        """refreshAfterMutation must branch on calendarView === 'meeting'."""
+        assert "'meeting'" in APP_JS
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found = False
+        brace_depth = 0
+        for line in lines:
+            if 'async function refreshAfterMutation(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if "=== 'meeting'" in line or "'meeting'" in line:
+                    found = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert found, "refreshAfterMutation must handle the 'meeting' calendar view"
+
+    def test_refresh_after_mutation_handles_month_view(self):
+        """refreshAfterMutation must branch on calendarView === 'month'."""
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found = False
+        brace_depth = 0
+        for line in lines:
+            if 'async function refreshAfterMutation(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if "=== 'month'" in line or "'month'" in line:
+                    found = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert found, "refreshAfterMutation must handle the 'month' calendar view"
+
+    def test_refresh_after_mutation_transitions_to_month_on_delete(self):
+        """refreshAfterMutation must call setCalendarView('month') when the selected meeting
+        no longer exists (i.e., after deletion while in 'meeting' view)."""
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found_transition = False
+        brace_depth = 0
+        for line in lines:
+            if 'async function refreshAfterMutation(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if "setCalendarView('month')" in line:
+                    found_transition = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert found_transition, "refreshAfterMutation must call setCalendarView('month') when meeting is gone"
+
+    def test_calendar_detail_delete_button_does_not_manually_set_calendar_view(self):
+        """The delete button in renderCalendarMeetingDetail must NOT call
+        setCalendarView('month') directly — that transition must live inside
+        refreshAfterMutation so the month calendar is always refreshed first."""
+        assert "deleteMeeting(m.id).then(() => setCalendarView('month'))" not in APP_JS
+
+    def test_no_window_location_reload(self):
+        """Mutations must never use window.location.reload() — calendar must update in-place."""
+        assert "window.location.reload" not in APP_JS
+
+    def test_refresh_after_mutation_uses_state_meetings_for_existence_check(self):
+        """refreshAfterMutation must check state.meetings to determine if the selected
+        meeting still exists after a mutation (drives the delete→month transition)."""
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found = False
+        brace_depth = 0
+        for line in lines:
+            if 'async function refreshAfterMutation(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if 'state.meetings' in line and ('find' in line or 'calendarSelectedMeetingId' in line):
+                    found = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert found, "refreshAfterMutation must check state.meetings for the selected meeting ID"
+
+    def test_refresh_after_mutation_calls_render_calendar_meeting_detail(self):
+        """refreshAfterMutation must call renderCalendarMeetingDetail when the meeting
+        still exists in 'meeting' view (so detail updates immediately after edit/adjust)."""
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found = False
+        brace_depth = 0
+        for line in lines:
+            if 'async function refreshAfterMutation(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if 'renderCalendarMeetingDetail' in line:
+                    found = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert found, "refreshAfterMutation must call renderCalendarMeetingDetail when meeting still exists"
+
+    def test_save_edit_does_not_redundantly_call_render_calendar_meeting_detail(self):
+        """saveEdit must NOT contain its own renderCalendarMeetingDetail call — that
+        responsibility belongs to refreshAfterMutation to avoid double-rendering."""
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found_manual_render = False
+        brace_depth = 0
+        for line in lines:
+            if 'async function saveEdit(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                stripped = line.strip()
+                if 'renderCalendarMeetingDetail' in stripped and 'refreshAfterMutation' not in stripped:
+                    found_manual_render = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert not found_manual_render, (
+            "saveEdit must not directly call renderCalendarMeetingDetail; "
+            "refreshAfterMutation handles that"
+        )
