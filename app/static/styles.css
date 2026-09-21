@@ -29,6 +29,9 @@
 }
 
 /* ── Reset & base ───────────────────────────────────────────────────────────── */
+/* Ensure the HTML [hidden] attribute is respected even when a CSS display rule
+   is present on the same element (author display rules outrank the UA stylesheet). */
+[hidden] { display: none !important; }
 * { box-sizing: border-box; }
 html, body {
   margin: 0;

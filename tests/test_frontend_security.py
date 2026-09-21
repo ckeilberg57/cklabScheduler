@@ -234,6 +234,23 @@ class TestCalendarDefaultView:
         css_text = css.read_text()
         assert ".endpoint-search::placeholder { color: var(--muted); }" in css_text
 
+    def test_hidden_attribute_respected_in_css(self):
+        """[hidden] must be display:none!important so author display rules cannot override it.
+        This prevents meeting cards from appearing when the calendar is the active view."""
+        import pathlib
+        css = pathlib.Path(__file__).parent.parent / "app" / "static" / "styles.css"
+        css_text = css.read_text()
+        assert "[hidden]" in css_text
+        assert "display: none !important" in css_text
+
+    def test_calendar_month_instruction_text_updated(self):
+        """Calendar month instruction must describe meeting-click behavior, not day-click."""
+        assert "Select a meeting to view its details." in APP_JS
+
+    def test_old_day_click_instruction_text_removed(self):
+        """Old day-click instruction text must not appear in production JS."""
+        assert "Click any day to view its meetings." not in APP_JS
+
 
 class TestEditDialogElements:
     def test_edit_scheduled_fields_present(self):

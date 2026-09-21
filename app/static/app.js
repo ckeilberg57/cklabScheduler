@@ -1048,7 +1048,7 @@ function setCalendarView(view) {
     calEl.hidden = false;
     if (calBtn)  { calBtn.classList.add('active'); calBtn.setAttribute('aria-pressed', 'true'); }
     if (sectionH2)   sectionH2.textContent   = 'Calendar View';
-    if (sectionDesc) sectionDesc.textContent = 'Click any day to view its meetings.';
+    if (sectionDesc) sectionDesc.textContent = 'Select a meeting to view its details.';
     renderMonthCalendar();
   } else if (view === 'meeting') {
     dayEl.hidden = false;
