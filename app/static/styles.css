@@ -169,17 +169,17 @@ a:focus-visible {
 .endpoint-search-wrap { margin-bottom: 8px; }
 .endpoint-search {
   width: 100%;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid var(--panel-dark-border);
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 9px;
   padding: 9px 13px;
   color: var(--light-blue-gray);
   outline: none;
   transition: border-color 0.15s, background 0.15s;
 }
-.endpoint-search::placeholder { color: var(--panel-dark-muted); }
+.endpoint-search::placeholder { color: rgba(219,227,238,0.80); }
 .endpoint-search:focus {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.20);
   border-color: var(--sky-blue);
 }
 
@@ -260,6 +260,8 @@ a:focus-visible {
 .light-item .endpoint-sub { color: var(--muted); }
 .light-item .ep-status.available { color: var(--status-available); }
 .light-item .ep-status.busy     { color: var(--status-busy); }
+.light-item .ep-alias           { color: var(--muted); }
+.light-item .ep-busy-reason     { color: var(--status-busy); }
 
 /* ── Topbar ─────────────────────────────────────────────────────────────────── */
 .topbar {
@@ -389,7 +391,7 @@ a:focus-visible {
 .meeting-block.scheduled    { background: var(--sand-accent); color: #4a3a2a; }
 .meeting-block.about_to_start { background: var(--yellow); color: #4a3a00; }
 .meeting-block.started      { background: var(--green); color: #0a2820; }
-.meeting-block.ended        { background: var(--light-blue-gray); color: var(--muted); }
+.meeting-block.ended        { background: var(--blue); color: #fff; }
 
 /* Hover card on timeline blocks */
 .meeting-hover-card {
@@ -460,7 +462,7 @@ a:focus-visible {
 .pill.about_to_start { background: var(--yellow); color: #4a3a00; }
 .pill.scheduled      { background: var(--light-blue-gray); color: var(--muted); }
 .pill.started        { background: var(--green); color: #0a2820; }
-.pill.ended          { background: #eef0f8; color: var(--muted); }
+.pill.ended          { background: var(--blue); color: #fff; }
 
 .subhead {
   font-size: 11px;
@@ -527,6 +529,14 @@ a:focus-visible {
   justify-content: center;
 }
 .ghost:hover { background: var(--sand); }
+.form-panel .ghost {
+  color: var(--light-blue-gray);
+  border-color: rgba(219,227,238,0.35);
+}
+.form-panel .ghost:hover {
+  background: rgba(219,227,238,0.12);
+  color: #fff;
+}
 .tiny-btn {
   background: var(--sand);
   color: var(--panel-dark);
@@ -714,7 +724,7 @@ a:focus-visible {
 .cal-meeting-label.scheduled    { background: rgba(216,194,168,0.35); }
 .cal-meeting-label.about_to_start { background: rgba(235,202,98,0.35); }
 .cal-meeting-label.started      { background: rgba(62,225,176,0.25); }
-.cal-meeting-label.ended        { background: rgba(219,227,238,0.6); color: var(--muted); }
+.cal-meeting-label.ended        { background: rgba(74,123,209,0.25); color: var(--blue); }
 
 /* ── Day view ───────────────────────────────────────────────────────────────── */
 .day-view { }

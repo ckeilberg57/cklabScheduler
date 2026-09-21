@@ -165,6 +165,43 @@ function getEndpointScheduleStatus(endpointAlias, currentMeetingId = null) {
   return { busy: false, reason: '' };
 }
 
+function getEditWindow() {
+  const startValue = $('#editStartTime')?.value;
+  const endValue = $('#editEndTime')?.value;
+  if (!startValue || !endValue) return null;
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return { start, end };
+}
+
+function getEndpointScheduleStatusEdit(endpointAlias, currentMeetingId) {
+  const win = getEditWindow();
+  if (!win) return { busy: false, reason: '' };
+
+  for (const meeting of state.meetings) {
+    if (currentMeetingId && meeting.id === currentMeetingId) continue;
+
+    const meetingStart = new Date(meeting.start_time);
+    const meetingEnd = new Date(meeting.end_time);
+
+    if (!overlaps(win.start, win.end, meetingStart, meetingEnd)) continue;
+
+    const assigned = (meeting.endpoints || []).some(
+      (ep) => (ep.endpoint_alias || '').toLowerCase() === (endpointAlias || '').toLowerCase()
+    );
+
+    if (assigned) {
+      return {
+        busy: true,
+        reason: `${meeting.title || meeting.meeting_alias} • ${meetingStart.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–${meetingEnd.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`,
+      };
+    }
+  }
+
+  return { busy: false, reason: '' };
+}
+
 function isValidEmail(email) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(email || '').trim());
 }
@@ -990,6 +1027,8 @@ function setCalendarView(view) {
   const cardsEl = $('#meetingCards');
   const calEl   = $('#calendarView');
   const dayEl   = $('#dayView');
+  const sectionH2   = document.querySelector('.meeting-list-wrap .section-head h2');
+  const sectionDesc = $('#meetingListDesc');
 
   [listBtn, calBtn].forEach((btn) => {
     if (btn) btn.classList.remove('active');
@@ -1003,13 +1042,19 @@ function setCalendarView(view) {
   if (view === 'list') {
     cardsEl.hidden = false;
     if (listBtn) { listBtn.classList.add('active'); listBtn.setAttribute('aria-pressed', 'true'); }
+    if (sectionH2)   sectionH2.textContent   = 'Meeting List';
+    if (sectionDesc) sectionDesc.textContent = 'Manage meetings below or switch to Calendar View.';
   } else if (view === 'month') {
     calEl.hidden = false;
     if (calBtn)  { calBtn.classList.add('active'); calBtn.setAttribute('aria-pressed', 'true'); }
+    if (sectionH2)   sectionH2.textContent   = 'Calendar View';
+    if (sectionDesc) sectionDesc.textContent = 'Click any day to view its meetings.';
     renderMonthCalendar();
   } else if (view === 'day') {
     dayEl.hidden = false;
     if (calBtn)  { calBtn.classList.add('active'); calBtn.setAttribute('aria-pressed', 'true'); }
+    if (sectionH2)   sectionH2.textContent   = 'Calendar — Day View';
+    if (sectionDesc) sectionDesc.textContent = 'Use ← Month to return to the monthly calendar.';
     renderDayView();
   }
 }
@@ -1451,6 +1496,63 @@ async function redialEndpoint(meetingId, endpointAlias) {
 
 // ── Edit dialog ───────────────────────────────────────────────────────────────
 
+function renderEditEndpoints() {
+  const dlg = $('#editDialog');
+  if (!dlg || !dlg.open) return;
+  const endpointSection = $('#editEndpointSection');
+  if (!endpointSection || endpointSection.hidden) return;
+
+  const meetingId = Number($('#editMeetingId').value);
+  const list = $('#editEndpointList');
+  if (!list || !meetingId) return;
+
+  const currentlyChecked = new Set();
+  document.querySelectorAll('.edit-endpoint-check:checked').forEach((box) => {
+    if (box.value) currentlyChecked.add(box.value);
+  });
+
+  list.replaceChildren();
+
+  state.endpoints.forEach((ep) => {
+    const scheduleStatus = getEndpointScheduleStatusEdit(ep.alias, meetingId);
+    const row = document.createElement('label');
+    row.className = 'endpoint-item light-item';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'edit-endpoint-check';
+    checkbox.value = ep.alias;
+    checkbox.dataset.displayName = ep.display_name || ep.alias;
+    checkbox.checked = currentlyChecked.has(ep.alias) && !scheduleStatus.busy;
+    checkbox.disabled = scheduleStatus.busy;
+    if (scheduleStatus.busy) row.style.opacity = '0.7';
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'endpoint-info';
+    const strong = document.createElement('strong');
+    strong.textContent = ep.display_name || ep.alias;
+    const sub = document.createElement('div');
+    sub.className = 'endpoint-sub';
+    const statusNode = buildEndpointStatusNode(scheduleStatus);
+    sub.appendChild(statusNode);
+    if (ep.alias) {
+      const aliasSpan = document.createElement('span');
+      aliasSpan.className = 'ep-alias';
+      aliasSpan.textContent = ep.alias;
+      sub.appendChild(aliasSpan);
+    }
+    if (scheduleStatus.busy && scheduleStatus.reason) {
+      const reasonSpan = document.createElement('span');
+      reasonSpan.className = 'ep-busy-reason';
+      reasonSpan.textContent = scheduleStatus.reason;
+      sub.appendChild(reasonSpan);
+    }
+    infoDiv.appendChild(strong);
+    infoDiv.appendChild(sub);
+    row.appendChild(checkbox);
+    row.appendChild(infoDiv);
+    list.appendChild(row);
+  });
+}
+
 function openEdit(meetingId) {
   const meeting = state.meetings.find((m) => m.id === meetingId);
   if (!meeting) return;
@@ -1495,6 +1597,7 @@ function openEdit(meetingId) {
     const assigned = new Set((meeting.endpoints || []).map((ep) => ep.endpoint_alias));
 
     state.endpoints.forEach((ep) => {
+      const scheduleStatus = getEndpointScheduleStatusEdit(ep.alias, meetingId);
       const row = document.createElement('label');
       row.className = 'endpoint-item light-item';
       const checkbox = document.createElement('input');
@@ -1502,14 +1605,29 @@ function openEdit(meetingId) {
       checkbox.className = 'edit-endpoint-check';
       checkbox.value = ep.alias;
       checkbox.dataset.displayName = ep.display_name || ep.alias;
-      checkbox.checked = assigned.has(ep.alias);
+      checkbox.checked = assigned.has(ep.alias) && !scheduleStatus.busy;
+      checkbox.disabled = scheduleStatus.busy;
+      if (scheduleStatus.busy) row.style.opacity = '0.7';
       const infoDiv = document.createElement('div');
       infoDiv.className = 'endpoint-info';
       const strong = document.createElement('strong');
       strong.textContent = ep.display_name || ep.alias;
       const sub = document.createElement('div');
       sub.className = 'endpoint-sub';
-      sub.textContent = ep.alias || '';
+      const statusNode = buildEndpointStatusNode(scheduleStatus);
+      sub.appendChild(statusNode);
+      if (ep.alias) {
+        const aliasSpan = document.createElement('span');
+        aliasSpan.className = 'ep-alias';
+        aliasSpan.textContent = ep.alias;
+        sub.appendChild(aliasSpan);
+      }
+      if (scheduleStatus.busy && scheduleStatus.reason) {
+        const reasonSpan = document.createElement('span');
+        reasonSpan.className = 'ep-busy-reason';
+        reasonSpan.textContent = scheduleStatus.reason;
+        sub.appendChild(reasonSpan);
+      }
       infoDiv.appendChild(strong);
       infoDiv.appendChild(sub);
       row.appendChild(checkbox);
@@ -1867,6 +1985,8 @@ async function init() {
 
   $('#startTime').addEventListener('change', renderEndpoints);
   $('#endTime').addEventListener('change', renderEndpoints);
+  $('#editStartTime').addEventListener('change', renderEditEndpoints);
+  $('#editEndTime').addEventListener('change', renderEditEndpoints);
 
   setToday();
   setDefaultTimes();
