@@ -580,6 +580,33 @@ function statusLabel(ep, meeting) {
   return ep.status || 'scheduled';
 }
 
+function buildEndpointChipRow(ep, meeting) {
+  const timelineState = meeting.timeline_status || meeting.status;
+  const row = document.createElement('div');
+  row.className = 'chip-row';
+
+  const chip = document.createElement('span');
+  chip.className = ep.live ? 'chip live-chip' : (timelineState === 'started' ? 'chip chip-disconnected' : 'chip');
+  chip.textContent = `${ep.display_name || ep.endpoint_alias} • ${statusLabel(ep, meeting)}`;
+  row.appendChild(chip);
+
+  if (!ep.live && timelineState === 'started') {
+    const redialBtn = document.createElement('button');
+    redialBtn.type = 'button';
+    redialBtn.className = 'tiny-btn redial-btn';
+    redialBtn.dataset.meetingId = meeting.id;
+    redialBtn.dataset.endpointAlias = ep.endpoint_alias;
+    redialBtn.textContent = 'Dial again';
+    redialBtn.onclick = (e) => {
+      e.stopPropagation();
+      redialEndpoint(redialBtn.dataset.meetingId, redialBtn.dataset.endpointAlias);
+    };
+    row.appendChild(redialBtn);
+  }
+
+  return row;
+}
+
 function canEditMeeting(meeting) {
   const status = meeting.status;
   return (
@@ -817,6 +844,23 @@ function renderTimeline() {
 
     hoverCard.appendChild(popupActions);
     block.appendChild(hoverCard);
+
+    block.tabIndex = 0;
+    block.setAttribute('role', 'button');
+    block.setAttribute('aria-label', `View details: ${m.title}`);
+    block.addEventListener('click', (e) => {
+      if (hoverCard.contains(e.target)) return;
+      state.calendarSelectedMeetingId = m.id;
+      setCalendarView('meeting');
+    });
+    block.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        state.calendarSelectedMeetingId = m.id;
+        setCalendarView('meeting');
+      }
+    });
+
     canvas.appendChild(block);
   });
 
@@ -895,26 +939,7 @@ function renderCards() {
     const assignedChips = document.createElement('div');
     assignedChips.className = 'endpoint-chips';
     (m.endpoints || []).forEach((ep) => {
-      const row = document.createElement('div');
-      row.className = 'chip-row';
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.textContent = `${ep.display_name || ep.endpoint_alias} • ${statusLabel(ep, m)}`;
-      row.appendChild(chip);
-      if (!ep.live && timelineState === 'started') {
-        const redialBtn = document.createElement('button');
-        redialBtn.type = 'button';
-        redialBtn.className = 'tiny-btn redial-btn';
-        redialBtn.dataset.meetingId = m.id;
-        redialBtn.dataset.endpointAlias = ep.endpoint_alias;
-        redialBtn.textContent = 'Dial again';
-        redialBtn.onclick = (e) => {
-          e.stopPropagation();
-          redialEndpoint(redialBtn.dataset.meetingId, redialBtn.dataset.endpointAlias);
-        };
-        row.appendChild(redialBtn);
-      }
-      assignedChips.appendChild(row);
+      assignedChips.appendChild(buildEndpointChipRow(ep, m));
     });
     if (!(m.endpoints || []).length) {
       const noEp = document.createElement('span');
@@ -1327,13 +1352,7 @@ function renderCalendarMeetingDetail() {
     const epChips = document.createElement('div');
     epChips.className = 'endpoint-chips';
     (m.endpoints || []).forEach((ep) => {
-      const row = document.createElement('div');
-      row.className = 'chip-row';
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.textContent = `${ep.display_name || ep.endpoint_alias} • ${statusLabel(ep, m)}`;
-      row.appendChild(chip);
-      epChips.appendChild(row);
+      epChips.appendChild(buildEndpointChipRow(ep, m));
     });
     card.appendChild(epChips);
   }

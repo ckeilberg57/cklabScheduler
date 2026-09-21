@@ -797,3 +797,213 @@ class TestCalendarMeetingDetailApiContract:
         found = next((m for m in items if m["id"] == mid), None)
         assert found is not None
         assert found["title"] == "Specific title to verify"
+
+
+# ── Section F: Per-endpoint live state API contract ───────────────────────────
+
+class TestEndpointLiveStateApiContract:
+    """
+    API contract tests for per-endpoint live state (Issues 2 and 3).
+
+    The frontend buildEndpointChipRow() reads ep.live to decide chip colour
+    and Dial Again visibility.  These tests verify the server-side contract:
+
+      F1. A connected endpoint in an active meeting has live=True.
+      F2. A dropped endpoint in an active meeting has live=False.
+      F3. Per-endpoint live is independent — two endpoints in one meeting can
+          have different live values simultaneously.
+      F4. An endpoint in a scheduled (not-yet-started) meeting always has
+          live=False regardless of Pexip data (the backend skips the live query).
+      F5. An endpoint in an ended meeting always has live=False.
+      F6. The live field is always present in each endpoint object.
+    """
+
+    def _live_participant(self, alias, display_name="Test Endpoint"):
+        return {"remote_alias": alias, "display_name": display_name}
+
+    def test_connected_endpoint_returns_live_true(self, test_db):
+        """Endpoint that matches a live Pexip participant must have live=True."""
+        app, mock_pexip = make_app(test_db)
+        create_user(test_db)
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
+        endpoint_alias = "ep-live@example.com"
+        mock_pexip.get_live_participants_via_edges.return_value = [
+            self._live_participant(endpoint_alias)
+        ]
+        with patch.object(Settings, "DB_PATH", test_db):
+            with closing(db()) as conn:
+                mid = insert_meeting(
+                    conn,
+                    title="Live Meeting",
+                    start_time=iso(noon_utc - timedelta(hours=1)),
+                    end_time=iso(noon_utc + timedelta(hours=1)),
+                    status="started",
+                    started_at=iso(noon_utc - timedelta(hours=1)),
+                )
+                insert_endpoint(conn, mid, endpoint_alias=endpoint_alias, display_name="Test Endpoint")
+        with app.test_client() as client:
+            login(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                today = today_date.isoformat()
+                resp = client.get(f"/api/meetings?date={today}")
+        items = resp.get_json()["items"]
+        meeting = next(m for m in items if m["id"] == mid)
+        ep_data = meeting["endpoints"][0]
+        assert ep_data["live"] is True
+
+    def test_dropped_endpoint_returns_live_false(self, test_db):
+        """Endpoint not matching any live Pexip participant must have live=False."""
+        app, mock_pexip = make_app(test_db)
+        create_user(test_db)
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
+        endpoint_alias = "ep-dropped@example.com"
+        mock_pexip.get_live_participants_via_edges.return_value = []
+        with patch.object(Settings, "DB_PATH", test_db):
+            with closing(db()) as conn:
+                mid = insert_meeting(
+                    conn,
+                    title="Meeting With Dropped Endpoint",
+                    start_time=iso(noon_utc - timedelta(hours=1)),
+                    end_time=iso(noon_utc + timedelta(hours=1)),
+                    status="started",
+                    started_at=iso(noon_utc - timedelta(hours=1)),
+                )
+                insert_endpoint(conn, mid, endpoint_alias=endpoint_alias, display_name="Dropped Room")
+        with app.test_client() as client:
+            login(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                today = today_date.isoformat()
+                resp = client.get(f"/api/meetings?date={today}")
+        items = resp.get_json()["items"]
+        meeting = next(m for m in items if m["id"] == mid)
+        ep_data = meeting["endpoints"][0]
+        assert ep_data["live"] is False
+
+    def test_per_endpoint_live_is_independent(self, test_db):
+        """Two endpoints in the same meeting can independently be live or dropped."""
+        app, mock_pexip = make_app(test_db)
+        create_user(test_db)
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
+        live_alias = "ep-connected@example.com"
+        dropped_alias = "ep-gone@example.com"
+        mock_pexip.get_live_participants_via_edges.return_value = [
+            self._live_participant(live_alias, "Connected Room")
+        ]
+        with patch.object(Settings, "DB_PATH", test_db):
+            with closing(db()) as conn:
+                mid = insert_meeting(
+                    conn,
+                    title="Mixed Endpoint Meeting",
+                    start_time=iso(noon_utc - timedelta(hours=1)),
+                    end_time=iso(noon_utc + timedelta(hours=1)),
+                    status="started",
+                    started_at=iso(noon_utc - timedelta(hours=1)),
+                )
+                insert_endpoint(conn, mid, endpoint_alias=live_alias, display_name="Connected Room")
+                insert_endpoint(conn, mid, endpoint_alias=dropped_alias, display_name="Dropped Room",
+                                status="scheduled")
+        with app.test_client() as client:
+            login(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                today = today_date.isoformat()
+                resp = client.get(f"/api/meetings?date={today}")
+        items = resp.get_json()["items"]
+        meeting = next(m for m in items if m["id"] == mid)
+        endpoints_by_alias = {ep_obj["endpoint_alias"]: ep_obj for ep_obj in meeting["endpoints"]}
+        assert endpoints_by_alias[live_alias]["live"] is True
+        assert endpoints_by_alias[dropped_alias]["live"] is False
+
+    def test_scheduled_meeting_endpoint_always_live_false(self, test_db):
+        """Endpoints in a not-yet-started meeting always have live=False (no Pexip query)."""
+        app, mock_pexip = make_app(test_db)
+        create_user(test_db)
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
+        endpoint_alias = "ep-future@example.com"
+        mock_pexip.get_live_participants_via_edges.return_value = [
+            self._live_participant(endpoint_alias)
+        ]
+        with patch.object(Settings, "DB_PATH", test_db):
+            with closing(db()) as conn:
+                mid = insert_meeting(
+                    conn,
+                    title="Future Meeting",
+                    start_time=iso(noon_utc + timedelta(hours=1)),
+                    end_time=iso(noon_utc + timedelta(hours=2)),
+                    status="scheduled",
+                )
+                insert_endpoint(conn, mid, endpoint_alias=endpoint_alias, display_name="Future Room")
+        with app.test_client() as client:
+            login(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                today = today_date.isoformat()
+                resp = client.get(f"/api/meetings?date={today}")
+        items = resp.get_json()["items"]
+        meeting = next(m for m in items if m["id"] == mid)
+        ep_data = meeting["endpoints"][0]
+        assert ep_data["live"] is False
+        mock_pexip.get_live_participants_via_edges.assert_not_called()
+
+    def test_ended_meeting_endpoint_always_live_false(self, test_db):
+        """Endpoints in an ended meeting always have live=False."""
+        app, mock_pexip = make_app(test_db)
+        create_user(test_db)
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
+        endpoint_alias = "ep-ended@example.com"
+        mock_pexip.get_live_participants_via_edges.return_value = [
+            self._live_participant(endpoint_alias)
+        ]
+        with patch.object(Settings, "DB_PATH", test_db):
+            with closing(db()) as conn:
+                mid = insert_meeting(
+                    conn,
+                    title="Ended Meeting",
+                    start_time=iso(noon_utc - timedelta(hours=2)),
+                    end_time=iso(noon_utc - timedelta(hours=1)),
+                    status="ended",
+                    started_at=iso(noon_utc - timedelta(hours=2)),
+                    ended_at=iso(noon_utc - timedelta(hours=1)),
+                )
+                insert_endpoint(conn, mid, endpoint_alias=endpoint_alias, display_name="Ended Room")
+        with app.test_client() as client:
+            login(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                today = today_date.isoformat()
+                resp = client.get(f"/api/meetings?date={today}")
+        items = resp.get_json()["items"]
+        meeting = next(m for m in items if m["id"] == mid)
+        ep_data = meeting["endpoints"][0]
+        assert ep_data["live"] is False
+
+    def test_live_field_always_present_in_endpoint_object(self, test_db):
+        """Every endpoint object must include a 'live' boolean field."""
+        app, mock_pexip = make_app(test_db)
+        create_user(test_db)
+        today_date = now_utc().date()
+        noon_utc = datetime(today_date.year, today_date.month, today_date.day, 12, 0, tzinfo=timezone.utc)
+        mock_pexip.get_live_participants_via_edges.return_value = []
+        with patch.object(Settings, "DB_PATH", test_db):
+            with closing(db()) as conn:
+                mid = insert_meeting(
+                    conn,
+                    title="Field Presence Test",
+                    start_time=iso(noon_utc),
+                    end_time=iso(noon_utc + timedelta(hours=1)),
+                    status="started",
+                    started_at=iso(noon_utc),
+                )
+                insert_endpoint(conn, mid, endpoint_alias="ep-field@example.com")
+        with app.test_client() as client:
+            login(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                today = today_date.isoformat()
+                resp = client.get(f"/api/meetings?date={today}")
+        items = resp.get_json()["items"]
+        meeting = next(m for m in items if m["id"] == mid)
+        ep_data = meeting["endpoints"][0]
+        assert "live" in ep_data
+        assert isinstance(ep_data["live"], bool)

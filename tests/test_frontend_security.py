@@ -517,3 +517,359 @@ class TestCalendarMutationRefresh:
             "saveEdit must not directly call renderCalendarMeetingDetail; "
             "refreshAfterMutation handles that"
         )
+
+
+# ── TestTimelineInteraction ────────────────────────────────────────────────────
+
+class TestTimelineInteraction:
+    """
+    Timeline meeting blocks must be keyboard-navigable and click-interactive.
+
+    Each block must expose role="button", tabIndex, and aria-label so that
+    keyboard and screen-reader users can open the meeting detail view without
+    a mouse.  The click handler must guard against hover-card child clicks
+    propagating to the block navigation.
+    """
+
+    def test_timeline_block_sets_role_button(self):
+        assert "setAttribute('role', 'button')" in APP_JS, \
+            "renderTimeline must set role='button' on each meeting block"
+
+    def test_timeline_block_sets_tabindex(self):
+        assert "block.tabIndex = 0" in APP_JS, \
+            "renderTimeline must set tabIndex=0 on each meeting block"
+
+    def test_timeline_block_sets_aria_label(self):
+        assert "setAttribute('aria-label'" in APP_JS, \
+            "renderTimeline must set aria-label on each meeting block"
+
+    def test_timeline_block_click_sets_calendar_selected_meeting_id(self):
+        lines = APP_JS.split('\n')
+        in_click = False
+        found_id_set = False
+        for i, line in enumerate(lines):
+            if "block.addEventListener('click'" in line:
+                in_click = True
+            if in_click:
+                if 'calendarSelectedMeetingId' in line:
+                    found_id_set = True
+                    break
+                if i > 0 and '});' in line and found_id_set is False and in_click:
+                    in_click = False
+        assert found_id_set, \
+            "click handler on timeline block must set state.calendarSelectedMeetingId"
+
+    def test_timeline_block_click_calls_set_calendar_view(self):
+        lines = APP_JS.split('\n')
+        in_click = False
+        found_nav = False
+        for i, line in enumerate(lines):
+            if "block.addEventListener('click'" in line:
+                in_click = True
+            if in_click:
+                if "setCalendarView('meeting')" in line:
+                    found_nav = True
+                    break
+                if '});' in line and in_click and not found_nav:
+                    in_click = False
+        assert found_nav, \
+            "click handler on timeline block must call setCalendarView('meeting')"
+
+    def test_timeline_block_click_guards_hover_card_children(self):
+        assert "hoverCard.contains(e.target)" in APP_JS, \
+            "click handler must short-circuit when the click target is inside the hover card"
+
+    def test_timeline_block_keydown_enter_navigates(self):
+        assert "e.key === 'Enter'" in APP_JS, \
+            "keydown handler must respond to Enter key on timeline block"
+
+    def test_timeline_block_keydown_space_navigates(self):
+        assert "e.key === ' '" in APP_JS, \
+            "keydown handler must respond to Space key on timeline block"
+
+    def test_meeting_block_cursor_pointer_in_css(self):
+        css = (STATIC_DIR / "styles.css").read_text()
+        lines = css.split('\n')
+        in_block = False
+        found = False
+        for line in lines:
+            if '.meeting-block {' in line:
+                in_block = True
+            if in_block:
+                if 'cursor: pointer' in line:
+                    found = True
+                    break
+                if '}' in line and in_block and not found:
+                    in_block = False
+        assert found, ".meeting-block CSS must include cursor: pointer"
+
+    def test_meeting_block_focus_visible_in_css(self):
+        css = (STATIC_DIR / "styles.css").read_text()
+        assert '.meeting-block:focus-visible' in css, \
+            "styles.css must define .meeting-block:focus-visible for keyboard focus ring"
+
+    def test_timeline_click_handler_does_not_call_open_edit(self):
+        """The timeline block click/keydown handlers must route via setCalendarView only —
+        they must NOT directly call openEdit, which would bypass lifecycle edit restrictions.
+        Edit policy lives entirely in renderCalendarMeetingDetail() and openEdit()."""
+        lines = APP_JS.split('\n')
+        in_click_handler = False
+        in_keydown_handler = False
+        open_edit_in_click = False
+        open_edit_in_keydown = False
+        for line in lines:
+            stripped = line.strip()
+            if "block.addEventListener('click'" in stripped:
+                in_click_handler = True
+                in_keydown_handler = False
+            if "block.addEventListener('keydown'" in stripped:
+                in_keydown_handler = True
+                in_click_handler = False
+            if in_click_handler or in_keydown_handler:
+                if 'openEdit' in stripped:
+                    if in_click_handler:
+                        open_edit_in_click = True
+                    else:
+                        open_edit_in_keydown = True
+                if stripped.startswith('});') or stripped.startswith('block.append'):
+                    if in_click_handler and 'keydown' not in stripped:
+                        in_click_handler = False
+                    if in_keydown_handler and 'keydown' not in stripped:
+                        in_keydown_handler = False
+        assert not open_edit_in_click, \
+            "Timeline block click handler must not call openEdit directly — use setCalendarView"
+        assert not open_edit_in_keydown, \
+            "Timeline block keydown handler must not call openEdit directly — use setCalendarView"
+
+
+# ── TestEndpointPerStateRendering ─────────────────────────────────────────────
+
+class TestEndpointPerStateRendering:
+    """
+    Per-endpoint chip classes must reflect live / disconnected / neutral state.
+
+    buildEndpointChipRow() is the single source of truth for endpoint chip
+    rendering in both renderCards() and renderCalendarMeetingDetail().
+    Live endpoints get live-chip (green), dropped endpoints in a started meeting
+    get chip-disconnected (red tint), and endpoints in other states get the
+    neutral chip class.  Dial Again must appear for dropped endpoints in a
+    started meeting and must NOT appear outside that state.
+    """
+
+    def test_build_endpoint_chip_row_helper_exists(self):
+        assert 'function buildEndpointChipRow(' in APP_JS, \
+            "buildEndpointChipRow helper function must be defined in app.js"
+
+    def test_live_endpoint_gets_live_chip_class(self):
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found = False
+        brace_depth = 0
+        for line in lines:
+            if 'function buildEndpointChipRow(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if 'live-chip' in line and 'ep.live' in line:
+                    found = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert found, \
+            "buildEndpointChipRow must apply 'live-chip' class when ep.live is true"
+
+    def test_disconnected_endpoint_gets_chip_disconnected_class(self):
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found = False
+        brace_depth = 0
+        for line in lines:
+            if 'function buildEndpointChipRow(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if 'chip-disconnected' in line:
+                    found = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert found, \
+            "buildEndpointChipRow must apply 'chip-disconnected' when ep is dropped in started meeting"
+
+    def test_chip_disconnected_only_for_started_meetings(self):
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found_guard = False
+        brace_depth = 0
+        for line in lines:
+            if 'function buildEndpointChipRow(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if 'chip-disconnected' in line and 'started' in line:
+                    found_guard = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert found_guard, \
+            "chip-disconnected must only apply when meeting status is 'started'"
+
+    def test_redial_button_present_for_disconnected_endpoint(self):
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found_redial = False
+        brace_depth = 0
+        for line in lines:
+            if 'function buildEndpointChipRow(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if 'redialEndpoint' in line:
+                    found_redial = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert found_redial, \
+            "buildEndpointChipRow must call redialEndpoint for dropped endpoints in started meetings"
+
+    def test_redial_button_guarded_by_started_state(self):
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found_guard = False
+        brace_depth = 0
+        for line in lines:
+            if 'function buildEndpointChipRow(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if 'redialEndpoint' in line and 'started' in APP_JS[APP_JS.index('function buildEndpointChipRow('):APP_JS.index('function buildEndpointChipRow(') + 800]:
+                    found_guard = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert found_guard, \
+            "Dial Again must only appear inside buildEndpointChipRow when meeting is started"
+
+    def test_redial_stops_propagation_in_chip_row(self):
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found = False
+        brace_depth = 0
+        for line in lines:
+            if 'function buildEndpointChipRow(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if 'stopPropagation' in line:
+                    found = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert found, \
+            "Dial Again onclick must call e.stopPropagation() to avoid triggering block navigation"
+
+    def test_render_cards_uses_build_endpoint_chip_row(self):
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found = False
+        brace_depth = 0
+        for line in lines:
+            if 'function renderCards(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if 'buildEndpointChipRow' in line:
+                    found = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert found, \
+            "renderCards must delegate endpoint chip rendering to buildEndpointChipRow"
+
+    def test_render_calendar_meeting_detail_uses_build_endpoint_chip_row(self):
+        lines = APP_JS.split('\n')
+        in_fn = False
+        found = False
+        brace_depth = 0
+        for line in lines:
+            if 'function renderCalendarMeetingDetail(' in line:
+                in_fn = True
+            if in_fn:
+                brace_depth += line.count('{') - line.count('}')
+                if 'buildEndpointChipRow' in line:
+                    found = True
+                if brace_depth <= 0 and in_fn:
+                    break
+        assert found, \
+            "renderCalendarMeetingDetail must delegate endpoint chip rendering to buildEndpointChipRow"
+
+    def test_chip_disconnected_class_defined_in_css(self):
+        css = (STATIC_DIR / "styles.css").read_text()
+        assert '.chip-disconnected' in css, \
+            "styles.css must define the .chip-disconnected class for dropped-endpoint chips"
+
+    def test_chip_disconnected_has_red_tint_background(self):
+        css = (STATIC_DIR / "styles.css").read_text()
+        lines = css.split('\n')
+        in_rule = False
+        found = False
+        for line in lines:
+            if '.chip-disconnected' in line:
+                in_rule = True
+            if in_rule:
+                if 'background' in line and '217' in line:
+                    found = True
+                    break
+                if '}' in line and not found:
+                    in_rule = False
+        assert found, \
+            ".chip-disconnected must have a red-tinted background (rgba(217,79,79,...))"
+
+    def test_redial_does_not_optimistically_set_ep_live(self):
+        """redialEndpoint must NOT set ep.live = true after clicking Dial Again.
+        Only a real server response via refreshAfterMutation/loadMeetings may change live state."""
+        fn_start = APP_JS.find('function redialEndpoint(')
+        assert fn_start != -1
+        depth = 0
+        fn_end = fn_start
+        for i, ch in enumerate(APP_JS[fn_start:], fn_start):
+            if ch == '{': depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    fn_end = i + 1
+                    break
+        fn_body = APP_JS[fn_start:fn_end]
+        assert 'ep.live' not in fn_body, \
+            "redialEndpoint must not modify ep.live — live state must come from real server refresh only"
+
+    def test_redial_calls_refresh_after_mutation_not_optimistic_render(self):
+        """After POST, redialEndpoint must call refreshAfterMutation (real server fetch) —
+        not manually patch state.meetings or call renderCalendarMeetingDetail directly."""
+        fn_start = APP_JS.find('function redialEndpoint(')
+        assert fn_start != -1
+        depth = 0
+        fn_end = fn_start
+        for i, ch in enumerate(APP_JS[fn_start:], fn_start):
+            if ch == '{': depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    fn_end = i + 1
+                    break
+        fn_body = APP_JS[fn_start:fn_end]
+        assert 'refreshAfterMutation' in fn_body, \
+            "redialEndpoint must call refreshAfterMutation to fetch real server state"
+        assert 'state.meetings' not in fn_body, \
+            "redialEndpoint must not mutate state.meetings directly (no optimistic update)"
+
+    def test_build_endpoint_chip_row_uses_safe_dom_apis_only(self):
+        fn_start = APP_JS.find('function buildEndpointChipRow(')
+        assert fn_start != -1
+        depth = 0
+        fn_end = fn_start
+        for i, ch in enumerate(APP_JS[fn_start:], fn_start):
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    fn_end = i + 1
+                    break
+        fn_body = APP_JS[fn_start:fn_end]
+        for api in PROHIBITED_DOM_APIS:
+            assert api not in fn_body, \
+                f"buildEndpointChipRow must not use prohibited DOM API: {api}"

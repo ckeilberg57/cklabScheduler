@@ -374,6 +374,11 @@ a:focus-visible {
   box-shadow: 0 4px 12px rgba(10, 33, 54, 0.14);
   overflow: hidden;
   min-width: 60px;
+  cursor: pointer;
+}
+.meeting-block:focus-visible {
+  outline: 2px solid var(--purple);
+  outline-offset: 2px;
 }
 .meeting-block strong {
   display: block;
@@ -489,6 +494,10 @@ a:focus-visible {
 .live-chip {
   background: rgba(62, 225, 176, 0.12);
   border-color: rgba(34, 184, 122, 0.4);
+}
+.chip-disconnected {
+  background: rgba(217, 79, 79, 0.10);
+  border-color: rgba(217, 79, 79, 0.40);
 }
 
 /* ── Buttons ────────────────────────────────────────────────────────────────── */
