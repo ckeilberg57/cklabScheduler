@@ -607,6 +607,125 @@ function buildEndpointChipRow(ep, meeting) {
   return row;
 }
 
+function buildTimelineHoverCard(meeting) {
+  const card = document.createElement('div');
+  card.className = 'meeting-hover-card';
+  card.setAttribute('aria-hidden', 'true');
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'hc-title';
+  titleEl.textContent = meeting.title || '';
+  card.appendChild(titleEl);
+
+  const timelineState = meeting.timeline_status || meeting.status;
+  const statusMap = {
+    scheduled: 'Scheduled',
+    about_to_start: 'About to start',
+    starting: 'Starting',
+    started: 'Active',
+    started_with_errors: 'Active',
+    ended: 'Ended',
+    ended_with_errors: 'Ended',
+  };
+
+  function hcRow(label, value) {
+    const row = document.createElement('div');
+    row.className = 'hc-row';
+    const lbl = document.createElement('span');
+    lbl.className = 'hc-label';
+    lbl.textContent = label;
+    row.appendChild(lbl);
+    const val = document.createElement('span');
+    val.className = 'hc-value';
+    val.textContent = String(value);
+    row.appendChild(val);
+    return row;
+  }
+
+  card.appendChild(hcRow('Status', statusMap[timelineState] || timelineState));
+
+  const start = new Date(meeting.start_time);
+  const end = new Date(meeting.end_time);
+  const hcTimeFmt = new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' });
+  card.appendChild(hcRow('Start', hcTimeFmt.format(start)));
+  card.appendChild(hcRow('End', hcTimeFmt.format(end)));
+
+  const durMins = Math.round((end - start) / 60000);
+  const durH = Math.floor(durMins / 60);
+  const durM = durMins % 60;
+  const durStr = durH > 0 ? (durM > 0 ? `${durH}h ${durM}m` : `${durH}h`) : `${durM}m`;
+  card.appendChild(hcRow('Duration', durStr));
+
+  const endpoints = meeting.endpoints || [];
+  if (endpoints.length > 0) {
+    const epHead = document.createElement('div');
+    epHead.className = 'hc-section-head';
+    epHead.textContent = 'Endpoints';
+    card.appendChild(epHead);
+
+    const isActive = timelineState === 'started' || timelineState === 'starting' || timelineState === 'started_with_errors';
+    endpoints.forEach((ep) => {
+      const name = ep.display_name || ep.endpoint_alias || '';
+      if (!name) return;
+      let stateLabel;
+      let stateClass;
+      if (ep.live) {
+        stateLabel = 'LIVE';
+        stateClass = 'hc-ep-live';
+      } else if (isActive) {
+        stateLabel = 'DROPPED';
+        stateClass = 'hc-ep-dropped';
+      } else {
+        stateLabel = statusLabel(ep, meeting);
+        stateClass = 'hc-ep-neutral';
+      }
+      const epRow = document.createElement('div');
+      epRow.className = 'hc-ep-row';
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'hc-ep-name';
+      nameSpan.textContent = name;
+      const stateSpan = document.createElement('span');
+      stateSpan.className = stateClass;
+      stateSpan.textContent = stateLabel;
+      epRow.appendChild(nameSpan);
+      epRow.appendChild(stateSpan);
+      card.appendChild(epRow);
+    });
+  }
+
+  const invitees = meeting.invitees || [];
+  if (invitees.length > 0) {
+    const invHead = document.createElement('div');
+    invHead.className = 'hc-section-head';
+    invHead.textContent = 'Invitees';
+    card.appendChild(invHead);
+    invitees.forEach((inv) => {
+      const label = (inv.email || inv.name || '').trim();
+      if (!label) return;
+      const invRow = document.createElement('div');
+      invRow.className = 'hc-inv-row';
+      invRow.textContent = label;
+      card.appendChild(invRow);
+    });
+  }
+
+  return card;
+}
+
+function positionTimelineHoverCard(block, hoverCard) {
+  hoverCard.classList.remove('hc-below', 'hc-right');
+  const rect = block.getBoundingClientRect();
+  if (rect.top < 220) {
+    hoverCard.classList.add('hc-below');
+  }
+  const cardMaxWidth = 320;
+  const leftPref = rect.left;
+  const maxLeft = Math.max(8, window.innerWidth - cardMaxWidth - 8);
+  if (leftPref > maxLeft) {
+    hoverCard.classList.add('hc-right');
+  }
+}
+
 function canEditMeeting(meeting) {
   const status = meeting.status;
   return (
@@ -750,12 +869,6 @@ function renderTimeline() {
       rowEndTimes[rowIndex] = m._end;
     }
 
-    const liveNames = (m.live_participants || []).map((p) => {
-      const label = p.display_name || p.remote_alias || 'Unknown';
-      const ip = (p.remote_ip || '').trim();
-      return ip ? `${label} (${ip})` : label;
-    }).join(', ') || 'No live participants';
-
     const block = document.createElement('div');
     block.className = `meeting-block ${m.timeline_status || m.status}`;
     block.style.left = `${leftPct}%`;
@@ -772,84 +885,19 @@ function renderTimeline() {
     metaDiv.textContent = `${fmt.format(m._start)}–${fmt.format(m._end)}`;
     block.appendChild(metaDiv);
 
-    // Hover card (shown on CSS :hover)
-    const hoverCard = document.createElement('div');
-    hoverCard.className = 'meeting-hover-card';
-
-    const hStrong = document.createElement('strong');
-    hStrong.textContent = m.title;
-    hoverCard.appendChild(hStrong);
-
-    const timeDiv = document.createElement('div');
-    timeDiv.textContent = `${fmt.format(m._start)} – ${fmt.format(m._end)}`;
-    hoverCard.appendChild(timeDiv);
-
-    const aliasDiv = document.createElement('div');
-    aliasDiv.textContent = m.meeting_alias;
-    hoverCard.appendChild(aliasDiv);
-
-    const assignedDiv = document.createElement('div');
-    const assignedLabel = document.createElement('strong');
-    assignedLabel.textContent = 'Endpoints: ';
-    assignedDiv.appendChild(assignedLabel);
-    assignedDiv.appendChild(document.createTextNode(
-      (m.endpoints || []).map((ep) => `${ep.display_name || ep.endpoint_alias} (${statusLabel(ep, m)})`).join(', ') || 'None'
-    ));
-    hoverCard.appendChild(assignedDiv);
-
-    const liveDiv = document.createElement('div');
-    const liveLabel = document.createElement('strong');
-    liveLabel.textContent = 'Live: ';
-    liveDiv.appendChild(liveLabel);
-    liveDiv.appendChild(document.createTextNode(liveNames));
-    hoverCard.appendChild(liveDiv);
-
-    if (m.notes) {
-      const notesDiv = document.createElement('div');
-      notesDiv.textContent = m.notes;
-      hoverCard.appendChild(notesDiv);
-    }
-
-    const popupActions = document.createElement('div');
-    popupActions.className = 'popup-actions';
-    const blockState = m.timeline_status || m.status;
-    if (blockState !== 'ended') {
-      popupActions.appendChild(adjustmentControl(m.id));
-    }
-    if (canEditMeeting(m)) {
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.className = 'tiny-btn';
-      editBtn.dataset.action = 'edit';
-      editBtn.dataset.meetingId = m.id;
-      editBtn.textContent = 'Edit';
-      popupActions.appendChild(editBtn);
-    }
-    if (blockState === 'ended') {
-      const exportLink = document.createElement('a');
-      exportLink.className = 'tiny-btn';
-      exportLink.href = `${API_BASE}/meetings/${m.id}/export`;
-      exportLink.target = '_blank';
-      exportLink.rel = 'noopener noreferrer';
-      exportLink.textContent = 'Export';
-      popupActions.appendChild(exportLink);
-    }
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.className = 'tiny-btn';
-    deleteBtn.dataset.action = 'delete';
-    deleteBtn.dataset.meetingId = m.id;
-    deleteBtn.textContent = 'Delete';
-    popupActions.appendChild(deleteBtn);
-
-    hoverCard.appendChild(popupActions);
+    const hoverCard = buildTimelineHoverCard(m);
     block.appendChild(hoverCard);
 
     block.tabIndex = 0;
     block.setAttribute('role', 'button');
     block.setAttribute('aria-label', `View details: ${m.title}`);
-    block.addEventListener('click', (e) => {
-      if (hoverCard.contains(e.target)) return;
+    block.addEventListener('mouseenter', () => positionTimelineHoverCard(block, hoverCard));
+    block.addEventListener('focus', () => {
+      positionTimelineHoverCard(block, hoverCard);
+      block.classList.add('hc-focused');
+    });
+    block.addEventListener('blur', () => block.classList.remove('hc-focused'));
+    block.addEventListener('click', () => {
       state.calendarSelectedMeetingId = m.id;
       setCalendarView('meeting');
     });

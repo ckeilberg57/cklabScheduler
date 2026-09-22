@@ -341,7 +341,7 @@ a:focus-visible {
   border-radius: 12px;
   border: 1px solid var(--border);
   background: #f8f9ff;
-  overflow: hidden;
+  overflow: visible;
 }
 .timeline-grid.quarter-hour-grid {
   position: absolute;
@@ -372,9 +372,10 @@ a:focus-visible {
   padding: 8px 10px;
   color: var(--text);
   box-shadow: 0 4px 12px rgba(10, 33, 54, 0.14);
-  overflow: hidden;
+  overflow: visible;
   min-width: 60px;
   cursor: pointer;
+  isolation: isolate;
 }
 .meeting-block:focus-visible {
   outline: 2px solid var(--purple);
@@ -406,22 +407,42 @@ a:focus-visible {
   display: none;
   position: absolute;
   left: 0;
-  top: calc(100% + 6px);
-  min-width: 260px;
-  max-width: 340px;
-  width: max-content;
+  bottom: calc(100% + 8px);
+  top: auto;
+  min-width: 220px;
+  max-width: 320px;
   background: #fff;
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(10, 33, 54, 0.16);
-  padding: 12px 14px;
-  z-index: 40;
+  box-shadow: 0 8px 28px rgba(10, 33, 54, 0.18);
+  padding: 12px 16px;
+  z-index: 200;
   font-size: 12px;
   line-height: 1.5;
-  pointer-events: auto;
 }
-.meeting-block:hover .meeting-hover-card { display: block; }
+.meeting-block:hover .meeting-hover-card,
+.meeting-block.hc-focused .meeting-hover-card { display: block; }
+.meeting-hover-card.hc-below { bottom: auto; top: calc(100% + 8px); }
+.meeting-hover-card.hc-right { left: auto; right: 0; }
+.hc-title { font-weight: 700; font-size: 13px; margin-bottom: 8px; }
+.hc-row { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 3px; }
+.hc-label { color: var(--muted); white-space: nowrap; }
+.hc-value { font-weight: 600; text-align: right; }
+.hc-section-head {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 8px 0 4px;
+}
+.hc-ep-row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+.hc-ep-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hc-ep-live  { font-weight: 700; color: var(--status-available); white-space: nowrap; }
+.hc-ep-dropped { font-weight: 700; color: var(--status-busy); white-space: nowrap; }
+.hc-ep-neutral { color: var(--muted); white-space: nowrap; }
+.hc-inv-row { margin-bottom: 2px; }
 
 .popup-actions,
 .card-actions,

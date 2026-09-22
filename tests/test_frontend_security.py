@@ -527,8 +527,8 @@ class TestTimelineInteraction:
 
     Each block must expose role="button", tabIndex, and aria-label so that
     keyboard and screen-reader users can open the meeting detail view without
-    a mouse.  The click handler must guard against hover-card child clicks
-    propagating to the block navigation.
+    a mouse.  The hover card contains no interactive controls, so clicks
+    anywhere on the block (including over the hover card) navigate to detail.
     """
 
     def test_timeline_block_sets_role_button(self):
@@ -575,9 +575,27 @@ class TestTimelineInteraction:
         assert found_nav, \
             "click handler on timeline block must call setCalendarView('meeting')"
 
-    def test_timeline_block_click_guards_hover_card_children(self):
-        assert "hoverCard.contains(e.target)" in APP_JS, \
-            "click handler must short-circuit when the click target is inside the hover card"
+    def test_timeline_click_navigates_without_hover_card_guard(self):
+        """Hover card has no interactive controls; click handler must navigate
+        unconditionally without a hoverCard.contains() guard."""
+        lines = APP_JS.split('\n')
+        in_click = False
+        found_guard = False
+        found_nav = False
+        for line in lines:
+            if "block.addEventListener('click'" in line:
+                in_click = True
+            if in_click:
+                if 'hoverCard.contains' in line:
+                    found_guard = True
+                if 'calendarSelectedMeetingId' in line:
+                    found_nav = True
+                    break
+                if '});' in line and not found_nav:
+                    in_click = False
+        assert found_nav, "click handler must set calendarSelectedMeetingId"
+        assert not found_guard, \
+            "click handler must not contain hoverCard.contains() guard — hover card has no interactive controls"
 
     def test_timeline_block_keydown_enter_navigates(self):
         assert "e.key === 'Enter'" in APP_JS, \
@@ -873,3 +891,210 @@ class TestEndpointPerStateRendering:
         for api in PROHIBITED_DOM_APIS:
             assert api not in fn_body, \
                 f"buildEndpointChipRow must not use prohibited DOM API: {api}"
+
+
+# ── TestTimelineHoverCard ──────────────────────────────────────────────────────
+
+def _extract_fn(js, name):
+    start = js.find(f'function {name}(')
+    if start == -1:
+        return None
+    depth = 0
+    for i, ch in enumerate(js[start:], start):
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                return js[start:i + 1]
+    return None
+
+
+class TestTimelineHoverCard:
+    """
+    Regression tests for the timeline meeting-block hover card.
+
+    The hover card must display meeting details (title, status, start, end,
+    duration, per-endpoint state, invitees) on mouseenter/focus, and hide on
+    mouseleave/blur.  It must contain no interactive controls (no Edit, no Dial
+    Again).  Clicking the meeting block must still open meeting detail.
+    Endpoint state must use textual LIVE/DROPPED labels, not color alone.
+    """
+
+    def test_build_timeline_hover_card_function_exists(self):
+        assert 'function buildTimelineHoverCard(' in APP_JS, \
+            "buildTimelineHoverCard helper must be defined in app.js"
+
+    def test_hover_card_shows_on_mouseenter(self):
+        assert "block.addEventListener('mouseenter'" in APP_JS, \
+            "renderTimeline must add mouseenter listener to show hover card"
+
+    def test_hover_card_hides_on_mouseleave(self):
+        assert "block.addEventListener('blur'" in APP_JS or \
+               "block.addEventListener('mouseleave'" in APP_JS, \
+            "renderTimeline must handle mouseleave or blur to hide hover card"
+
+    def test_hover_card_shows_on_keyboard_focus(self):
+        assert "block.addEventListener('focus'" in APP_JS, \
+            "renderTimeline must add focus listener for keyboard hover card"
+
+    def test_hover_card_hides_on_blur(self):
+        assert "block.addEventListener('blur'" in APP_JS, \
+            "renderTimeline must add blur listener to hide hover card on keyboard navigation away"
+
+    def test_hover_card_title_uses_safe_textcontent(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert 'hc-title' in fn_body, "hover card must set hc-title element"
+        assert 'textContent' in fn_body, "hover card title must use textContent (safe DOM)"
+        assert 'innerHTML' not in fn_body, "hover card must not use innerHTML"
+
+    def test_hover_card_shows_status(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert 'Status' in fn_body, "hover card must render a Status row"
+        assert 'statusMap' in fn_body or 'Scheduled' in fn_body, \
+            "hover card must map lifecycle status to a human-readable label"
+
+    def test_hover_card_shows_start_time(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert 'Start' in fn_body, "hover card must render a Start row"
+        assert 'start_time' in fn_body or 'start' in fn_body.lower(), \
+            "hover card must use meeting start_time"
+
+    def test_hover_card_shows_end_time(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert 'End' in fn_body, "hover card must render an End row"
+
+    def test_hover_card_shows_duration(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert 'Duration' in fn_body, "hover card must render a Duration row"
+
+    def test_hover_card_shows_endpoint_names(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert 'display_name' in fn_body or 'endpoint_alias' in fn_body, \
+            "hover card must display endpoint display_name or alias"
+
+    def test_hover_card_live_endpoint_shows_live_label(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert "'LIVE'" in fn_body or '"LIVE"' in fn_body, \
+            "hover card must display textual LIVE label for live endpoints"
+        assert 'hc-ep-live' in fn_body, \
+            "hover card must apply hc-ep-live class for live endpoints"
+
+    def test_hover_card_dropped_endpoint_shows_dropped_label(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert "'DROPPED'" in fn_body or '"DROPPED"' in fn_body, \
+            "hover card must display textual DROPPED label for dropped endpoints"
+        assert 'hc-ep-dropped' in fn_body, \
+            "hover card must apply hc-ep-dropped class for dropped endpoints"
+
+    def test_hover_card_two_endpoints_independently_live_and_dropped(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert 'ep.live' in fn_body, \
+            "hover card must check ep.live independently per endpoint"
+        assert 'forEach' in fn_body, \
+            "hover card must iterate endpoints individually"
+
+    def test_hover_card_shows_invitees_when_present(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert 'invitees' in fn_body, \
+            "hover card must render invitees section when invitees exist"
+        assert 'Invitees' in fn_body, \
+            "hover card must label the invitees section"
+
+    def test_hover_card_missing_invitees_handled_safely(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert "meeting.invitees || []" in fn_body or "|| []" in fn_body, \
+            "hover card must default invitees to [] when absent"
+
+    def test_hover_card_no_undefined_null_rendered(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert 'String(value)' in fn_body or '.textContent = String(' in fn_body, \
+            "hover card must coerce values via String() to avoid rendering 'undefined'"
+        assert "|| ''" in fn_body or "|| \"\"" in fn_body, \
+            "hover card must guard optional string fields against null/undefined"
+
+    def test_hover_card_no_edit_button(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert 'openEdit' not in fn_body, \
+            "hover card must not contain an Edit button"
+        assert "'Edit'" not in fn_body and '"Edit"' not in fn_body, \
+            "hover card must not render an Edit control"
+
+    def test_hover_card_no_dial_again_button(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert 'redialEndpoint' not in fn_body, \
+            "hover card must not contain a Dial Again button"
+        assert "'Dial again'" not in fn_body and '"Dial again"' not in fn_body, \
+            "hover card must not render a Dial Again control"
+
+    def test_timeline_click_still_opens_meeting_detail(self):
+        lines = APP_JS.split('\n')
+        in_click = False
+        found = False
+        for line in lines:
+            if "block.addEventListener('click'" in line:
+                in_click = True
+            if in_click and 'calendarSelectedMeetingId' in line:
+                found = True
+                break
+            if in_click and '});' in line:
+                in_click = False
+        assert found, "block click handler must still set calendarSelectedMeetingId"
+
+    def test_timeline_enter_still_opens_meeting_detail(self):
+        assert "e.key === 'Enter'" in APP_JS, \
+            "keydown handler must still respond to Enter"
+
+    def test_timeline_space_still_opens_meeting_detail(self):
+        assert "e.key === ' '" in APP_JS, \
+            "keydown handler must still respond to Space"
+
+    def test_hover_card_uses_safe_dom_apis_only(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        for api in PROHIBITED_DOM_APIS:
+            assert api not in fn_body, \
+                f"buildTimelineHoverCard must not use prohibited DOM API: {api}"
+
+    def test_hover_card_positioned_absolute_no_layout_shift(self):
+        css = (STATIC_DIR / "styles.css").read_text()
+        lines = css.split('\n')
+        in_rule = False
+        found_absolute = False
+        for line in lines:
+            if '.meeting-hover-card {' in line:
+                in_rule = True
+            if in_rule:
+                if 'position: absolute' in line or 'position: fixed' in line:
+                    found_absolute = True
+                if '}' in line and not found_absolute:
+                    in_rule = False
+        assert found_absolute, \
+            ".meeting-hover-card must use position: absolute or fixed to avoid layout shift"
+
+    def test_focus_visible_outline_preserved(self):
+        css = (STATIC_DIR / "styles.css").read_text()
+        assert '.meeting-block:focus-visible' in css, \
+            "focus-visible outline on .meeting-block must be preserved"
+
+    def test_endpoint_live_state_textual_not_color_only(self):
+        fn_body = _extract_fn(APP_JS, 'buildTimelineHoverCard')
+        assert fn_body is not None
+        assert "'LIVE'" in fn_body or '"LIVE"' in fn_body, \
+            "LIVE state must include textual label, not just CSS class"
+        assert "'DROPPED'" in fn_body or '"DROPPED"' in fn_body, \
+            "DROPPED state must include textual label, not just CSS class"
