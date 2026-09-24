@@ -12,9 +12,11 @@ from app.email_service import send_invites_for_meeting
 from app.meeting_utils import (
     build_webrtc_join_url,
     fetch_meeting_with_endpoints,
+    find_endpoint_participants,
     iso,
     meetings_for_day,
     meetings_for_range,
+    normalize_live_participants,
     now_utc,
     parse_iso,
     safe_email,
@@ -533,3 +535,155 @@ def api_resend_invitee(meeting_id, invitee_id):
             )
             conn.commit()
             return jsonify({"ok": False, "error": "Failed to send invitation"}), 500
+
+
+@meetings_bp.route("/api/meetings/<int:meeting_id>/add_endpoint", methods=["POST"])
+@login_required
+def api_add_endpoint_to_active(meeting_id):
+    """Add a single endpoint to an ACTIVE meeting and dial it in immediately."""
+    payload = request.get_json(force=True, silent=True) or {}
+    endpoint_alias = (payload.get("endpoint_alias") or "").strip()
+    display_name = (payload.get("display_name") or endpoint_alias).strip()
+    role = (payload.get("role") or "host").lower()
+
+    if not endpoint_alias:
+        return jsonify({"ok": False, "error": "endpoint_alias is required"}), 400
+
+    with closing(db()) as conn:
+        meeting = conn.execute("SELECT * FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+        if not meeting:
+            return jsonify({"ok": False, "error": "Meeting not found"}), 404
+
+        status = meeting["status"]
+        if status not in ("started", "started_with_errors"):
+            return jsonify({
+                "ok": False,
+                "error": f"Endpoint management requires an active meeting (status: {status})",
+            }), 400
+
+        existing = conn.execute(
+            "SELECT id FROM meeting_endpoints WHERE meeting_id = ? AND endpoint_alias = ?",
+            (meeting_id, endpoint_alias),
+        ).fetchone()
+        if existing:
+            return jsonify({"ok": False, "error": "Endpoint already assigned to this meeting"}), 400
+
+        # Insert DB record first; roll back on dial failure
+        conn.execute(
+            """
+            INSERT INTO meeting_endpoints
+                (meeting_id, endpoint_alias, display_name, role, status)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (meeting_id, endpoint_alias, display_name, role, "scheduled"),
+        )
+        conn.commit()
+
+        pexip = current_app.pexip
+        token = None
+        try:
+            token = pexip.request_control_token(meeting["meeting_alias"])
+            resp = pexip.dial_endpoint_to_meeting(
+                meeting["meeting_alias"], endpoint_alias, token, role
+            )
+            conn.execute(
+                """
+                UPDATE meeting_endpoints SET status = ?, dial_response = ?
+                WHERE meeting_id = ? AND endpoint_alias = ?
+                """,
+                ("redialed", json.dumps(resp), meeting_id, endpoint_alias),
+            )
+            conn.commit()
+            return jsonify({
+                "ok": True,
+                "item": fetch_meeting_with_endpoints(conn, meeting_id, current_app.pexip),
+            })
+        except Exception:
+            current_app.logger.exception(
+                "Dial failed for new endpoint %s in meeting %d", endpoint_alias, meeting_id
+            )
+            # Rollback: remove the DB record so we don't falsely show endpoint as assigned
+            conn.execute(
+                "DELETE FROM meeting_endpoints WHERE meeting_id = ? AND endpoint_alias = ?",
+                (meeting_id, endpoint_alias),
+            )
+            conn.commit()
+            return jsonify({"ok": False, "error": "Dial failed; endpoint not added"}), 500
+        finally:
+            if token:
+                pexip.release_control_token(meeting["meeting_alias"], token)
+
+
+@meetings_bp.route("/api/meetings/<int:meeting_id>/remove_endpoint", methods=["POST"])
+@login_required
+def api_remove_endpoint_from_active(meeting_id):
+    """Remove a single endpoint from an ACTIVE meeting and disconnect its call leg."""
+    payload = request.get_json(force=True, silent=True) or {}
+    endpoint_alias = (payload.get("endpoint_alias") or "").strip()
+
+    if not endpoint_alias:
+        return jsonify({"ok": False, "error": "endpoint_alias is required"}), 400
+
+    with closing(db()) as conn:
+        meeting = conn.execute("SELECT * FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+        if not meeting:
+            return jsonify({"ok": False, "error": "Meeting not found"}), 404
+
+        status = meeting["status"]
+        if status not in ("started", "started_with_errors"):
+            return jsonify({
+                "ok": False,
+                "error": f"Endpoint management requires an active meeting (status: {status})",
+            }), 400
+
+        ep = conn.execute(
+            "SELECT * FROM meeting_endpoints WHERE meeting_id = ? AND endpoint_alias = ?",
+            (meeting_id, endpoint_alias),
+        ).fetchone()
+        if not ep:
+            return jsonify({"ok": False, "error": "Endpoint not assigned to this meeting"}), 404
+
+        pexip = current_app.pexip
+        token = None
+        try:
+            token = pexip.request_control_token(meeting["meeting_alias"])
+            raw_live = pexip.get_live_participants(meeting["meeting_alias"], token)
+            live_items = normalize_live_participants(raw_live)
+
+            display_name = ep["display_name"] or endpoint_alias
+            matching = find_endpoint_participants(endpoint_alias, display_name, live_items)
+
+            if len(matching) > 1:
+                return jsonify({
+                    "ok": False,
+                    "error": "Multiple participants match this endpoint; cannot safely identify which to disconnect",
+                }), 409
+
+            if len(matching) == 1:
+                participant_uuid = matching[0].get("participant_id", "")
+                if not participant_uuid:
+                    return jsonify({
+                        "ok": False,
+                        "error": "Matched participant has no UUID; cannot safely disconnect",
+                    }), 500
+                pexip.disconnect_participant(meeting["meeting_alias"], participant_uuid, token)
+
+            # Whether live or not, remove the DB assignment
+            conn.execute(
+                "DELETE FROM meeting_endpoints WHERE meeting_id = ? AND endpoint_alias = ?",
+                (meeting_id, endpoint_alias),
+            )
+            conn.commit()
+            return jsonify({
+                "ok": True,
+                "item": fetch_meeting_with_endpoints(conn, meeting_id, current_app.pexip),
+            })
+
+        except Exception:
+            current_app.logger.exception(
+                "Remove endpoint failed for %s in meeting %d", endpoint_alias, meeting_id
+            )
+            return jsonify({"ok": False, "error": "Failed to remove endpoint"}), 500
+        finally:
+            if token:
+                pexip.release_control_token(meeting["meeting_alias"], token)

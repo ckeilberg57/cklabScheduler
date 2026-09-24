@@ -127,6 +127,15 @@ class PexipAPI:
             json={},
         )
 
+    def disconnect_participant(self, meeting_alias, participant_uuid, token):
+        headers = {"Content-Type": "application/json", "token": token}
+        return self._client_request(
+            "POST",
+            f"/api/client/v2/conferences/{meeting_alias}/participants/{participant_uuid}/disconnect",
+            headers=headers,
+            json={},
+        )
+
     def release_control_token(self, meeting_alias, token):
         headers = {"Content-Type": "application/json", "token": token}
         try:

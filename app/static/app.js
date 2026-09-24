@@ -18,6 +18,8 @@ const state = {
   endpointSearchQuery: '',
 };
 
+let _overflowPopover = null;
+
 const APP_ROOT = (document.querySelector('meta[name="app-root"]')?.content || '').replace(/\/$/, '');
 const API_BASE = `${APP_ROOT}/api`;
 const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || '';
@@ -1248,6 +1250,118 @@ function renderMonthCalendar() {
   }
 }
 
+function closeOverflowPopover() {
+  if (_overflowPopover) {
+    _overflowPopover.remove();
+    _overflowPopover = null;
+  }
+}
+
+function openOverflowPopover(dateStr, dayMeetings, anchorEl) {
+  closeOverflowPopover();
+
+  const popover = document.createElement('div');
+  popover.className = 'cal-overflow-popover';
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-modal', 'true');
+  const dateLabel = new Date(`${dateStr}T12:00:00`).toLocaleDateString(undefined, {
+    month: 'long', day: 'numeric',
+  });
+  popover.setAttribute('aria-label', `Meetings — ${dateLabel}`);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'cal-overflow-close';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.textContent = '✕';
+  closeBtn.onclick = () => { closeOverflowPopover(); anchorEl.focus(); };
+  popover.appendChild(closeBtn);
+
+  const header = document.createElement('div');
+  header.className = 'cal-overflow-header';
+  header.textContent = `Meetings — ${dateLabel}`;
+  popover.appendChild(header);
+
+  const list = document.createElement('div');
+  list.className = 'cal-overflow-list';
+
+  const sorted = [...dayMeetings].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+  sorted.forEach((m) => {
+    const row = document.createElement('div');
+    row.className = 'cal-overflow-row';
+    row.setAttribute('role', 'button');
+    row.setAttribute('tabindex', '0');
+    row.setAttribute('aria-label', `View meeting: ${m.title || m.meeting_alias}`);
+
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'cal-overflow-time';
+    timeSpan.textContent = fmt.format(new Date(m.start_time));
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'cal-overflow-title';
+    titleSpan.textContent = m.title || m.meeting_alias;
+
+    const ts = m.timeline_status || m.status;
+    const statusSpan = document.createElement('span');
+    statusSpan.className = `cal-overflow-status ${ts}`;
+    statusSpan.textContent = String(ts).replaceAll('_', ' ');
+
+    row.appendChild(timeSpan);
+    row.appendChild(titleSpan);
+    row.appendChild(statusSpan);
+
+    const selectMeeting = () => {
+      closeOverflowPopover();
+      $('#dayPicker').value = dateStr;
+      state.calendarSelectedMeetingId = m.id;
+      loadMeetings().then(() => setCalendarView('meeting')).catch(showErrorToast);
+    };
+    row.addEventListener('click', selectMeeting);
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectMeeting(); }
+      if (e.key === 'Escape') { closeOverflowPopover(); anchorEl.focus(); }
+    });
+
+    list.appendChild(row);
+  });
+
+  popover.appendChild(list);
+  document.body.appendChild(popover);
+  _overflowPopover = popover;
+
+  const anchorRect = anchorEl.getBoundingClientRect();
+  const pw = popover.offsetWidth || 260;
+  const ph = popover.offsetHeight || 200;
+  let top = anchorRect.bottom + window.scrollY + 4;
+  let left = Math.max(8, anchorRect.left + window.scrollX);
+  if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+  if (top + ph > window.innerHeight + window.scrollY - 8) {
+    top = anchorRect.top + window.scrollY - ph - 4;
+  }
+  popover.style.top = `${top}px`;
+  popover.style.left = `${left}px`;
+
+  const firstRow = list.querySelector('.cal-overflow-row');
+  if (firstRow) firstRow.focus();
+
+  const outsideClick = (e) => {
+    if (_overflowPopover && !_overflowPopover.contains(e.target) && e.target !== anchorEl) {
+      closeOverflowPopover();
+      document.removeEventListener('click', outsideClick, true);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', outsideClick, true), 0);
+
+  const escClose = (e) => {
+    if (e.key === 'Escape' && _overflowPopover) {
+      closeOverflowPopover();
+      anchorEl.focus();
+      document.removeEventListener('keydown', escClose);
+    }
+  };
+  document.addEventListener('keydown', escClose);
+}
+
 function buildCalCell(year, month, dayNum, extraClass, meetingsByDay, todayStr, currentYear) {
   const cellYear  = month < 0 ? year - 1 : (month > 11 ? year + 1 : year);
   const cellMonth = ((month % 12) + 12) % 12;
@@ -1296,7 +1410,19 @@ function buildCalCell(year, month, dayNum, extraClass, meetingsByDay, todayStr, 
   if (dayMeetings.length > maxVisible) {
     const more = document.createElement('div');
     more.className = 'cal-more';
-    more.textContent = `+${dayMeetings.length - maxVisible} more`;
+    more.setAttribute('role', 'button');
+    more.setAttribute('tabindex', '0');
+    const overflowCount = dayMeetings.length - maxVisible;
+    more.setAttribute('aria-label', `Show ${overflowCount} more meetings on ${dateStr}`);
+    more.textContent = `+${overflowCount} more`;
+    const openPopover = (e) => {
+      e.stopPropagation();
+      openOverflowPopover(dateStr, dayMeetings, more);
+    };
+    more.addEventListener('click', openPopover);
+    more.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPopover(e); }
+    });
     cell.appendChild(more);
   }
   if (dayMeetings.length) {
@@ -1627,6 +1753,121 @@ function renderEditEndpoints() {
   });
 }
 
+function _renderActiveEndpointSection(meeting) {
+  const wrap = $('#editActiveEndpointSection');
+  if (!wrap) return;
+  wrap.replaceChildren();
+
+  const head = document.createElement('div');
+  head.className = 'section-head slim';
+  const h3 = document.createElement('h3');
+  h3.textContent = 'Endpoints';
+  head.appendChild(h3);
+  wrap.appendChild(head);
+
+  const currentEps = meeting.endpoints || [];
+  if (currentEps.length) {
+    currentEps.forEach((ep) => {
+      const row = document.createElement('div');
+      row.className = 'active-ep-row';
+      const liveSpan = document.createElement('span');
+      liveSpan.className = ep.live ? 'chip live-chip' : 'chip';
+      liveSpan.textContent = `${ep.display_name || ep.endpoint_alias} • ${ep.live ? 'LIVE' : 'not connected'}`;
+      row.appendChild(liveSpan);
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'tiny-btn';
+      removeBtn.textContent = 'Remove';
+      removeBtn.onclick = async () => {
+        removeBtn.disabled = true;
+        try {
+          await api(`/meetings/${meeting.id}/remove_endpoint`, {
+            method: 'POST',
+            body: JSON.stringify({ endpoint_alias: ep.endpoint_alias }),
+          });
+          showToast(`${ep.display_name || ep.endpoint_alias} removed.`);
+          await loadMeetings();
+          const updated = state.meetings.find((m) => m.id === meeting.id);
+          if (updated) _renderActiveEndpointSection(updated);
+        } catch (err) {
+          showErrorToast(err);
+        } finally {
+          if (removeBtn.isConnected) removeBtn.disabled = false;
+        }
+      };
+      row.appendChild(removeBtn);
+      wrap.appendChild(row);
+    });
+  } else {
+    const empty = document.createElement('div');
+    empty.className = 'muted';
+    empty.textContent = 'No endpoints currently assigned.';
+    wrap.appendChild(empty);
+  }
+
+  const addHead = document.createElement('div');
+  addHead.className = 'section-head slim';
+  const addLabel = document.createElement('span');
+  addLabel.textContent = 'Add endpoint';
+  addHead.appendChild(addLabel);
+  wrap.appendChild(addHead);
+
+  const assignedAliases = new Set((meeting.endpoints || []).map((ep) => ep.endpoint_alias));
+  const available = state.endpoints.filter((ep) => !assignedAliases.has(ep.alias));
+
+  if (!available.length) {
+    const noAvail = document.createElement('div');
+    noAvail.className = 'muted';
+    noAvail.textContent = 'No available endpoints to add.';
+    wrap.appendChild(noAvail);
+    return;
+  }
+
+  const addRow = document.createElement('div');
+  addRow.className = 'inline-input';
+
+  const select = document.createElement('select');
+  select.className = 'ep-add-select';
+  select.setAttribute('aria-label', 'Select endpoint to add');
+  available.forEach((ep) => {
+    const opt = document.createElement('option');
+    opt.value = ep.alias;
+    opt.dataset.displayName = ep.display_name || ep.alias;
+    opt.textContent = ep.display_name || ep.alias;
+    select.appendChild(opt);
+  });
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'secondary';
+  addBtn.textContent = 'Add to meeting';
+  addBtn.onclick = async () => {
+    const alias = select.value;
+    const selectedOpt = select.options[select.selectedIndex];
+    const displayName = (selectedOpt?.dataset.displayName) || alias;
+    if (!alias) return;
+    addBtn.disabled = true;
+    try {
+      await api(`/meetings/${meeting.id}/add_endpoint`, {
+        method: 'POST',
+        body: JSON.stringify({ endpoint_alias: alias, display_name: displayName, role: 'host' }),
+      });
+      showToast(`${displayName} added and dial requested.`);
+      await loadMeetings();
+      const updated = state.meetings.find((m) => m.id === meeting.id);
+      if (updated) _renderActiveEndpointSection(updated);
+    } catch (err) {
+      showErrorToast(err);
+    } finally {
+      if (addBtn.isConnected) addBtn.disabled = false;
+    }
+  };
+
+  addRow.appendChild(select);
+  addRow.appendChild(addBtn);
+  wrap.appendChild(addRow);
+}
+
 function openEdit(meetingId) {
   const meeting = state.meetings.find((m) => m.id === meetingId);
   if (!meeting) return;
@@ -1647,6 +1888,9 @@ function openEdit(meetingId) {
     scheduledFields.hidden = false;
     activeFields.hidden    = true;
     endpointSection.hidden = false;
+    // Hide active endpoint section when switching to scheduled edit
+    const activeEpSectionEl = $('#editActiveEndpointSection');
+    if (activeEpSectionEl) activeEpSectionEl.hidden = true;
 
     $('#editTitle').value     = meeting.title || '';
     $('#editStartTime').value = toLocalInputValue(new Date(meeting.start_time));
@@ -1657,6 +1901,16 @@ function openEdit(meetingId) {
     endpointSection.hidden = true;
 
     $('#editEndTimeActive').value = toLocalInputValue(new Date(meeting.end_time));
+
+    // Ensure active endpoint section exists and render it
+    let activeEpSection = $('#editActiveEndpointSection');
+    if (!activeEpSection) {
+      activeEpSection = document.createElement('div');
+      activeEpSection.id = 'editActiveEndpointSection';
+      activeFields.insertAdjacentElement('afterend', activeEpSection);
+    }
+    activeEpSection.hidden = false;
+    _renderActiveEndpointSection(meeting);
   } else {
     // Not editable — should not reach here since canEditMeeting guards the button
     return;
@@ -2074,11 +2328,21 @@ async function init() {
     showErrorToast(err);
   }
 
-  // Poll meetings
+  // Poll meetings and calendar data
   setInterval(async () => {
     try {
       await loadMeetings();
-      if (state.calendarView === 'meeting') renderCalendarMeetingDetail();
+      if (state.calendarView === 'month' || state.calendarView === 'meeting') {
+        await loadMonthMeetings(state.calendarYear, state.calendarMonth);
+      }
+      if (state.calendarView === 'meeting') {
+        const stillExists = state.meetings.find((m) => m.id === state.calendarSelectedMeetingId);
+        if (stillExists) {
+          renderCalendarMeetingDetail();
+        } else if (state.calendarSelectedMeetingId !== null) {
+          setCalendarView('month');
+        }
+      }
     } catch (err) {
       console.error(err);
     }

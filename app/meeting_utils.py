@@ -126,6 +126,21 @@ def endpoint_matches_live(endpoint_alias, display_name, live_items):
     return False
 
 
+def find_endpoint_participants(endpoint_alias, display_name, live_items):
+    """Return all live participants matching the endpoint by alias or display name."""
+    alias_key = normalize_alias(endpoint_alias)
+    name_key = normalize_alias(display_name or endpoint_alias)
+    matches = []
+    for item in live_items:
+        candidates = {
+            item.get("remote_alias_key", ""),
+            item.get("display_name_key", ""),
+        }
+        if (alias_key and alias_key in candidates) or (name_key and name_key in candidates):
+            matches.append(item)
+    return matches
+
+
 def classify_meeting(row):
     if row["status"] in ("ended", "ended_with_errors"):
         return "ended"
