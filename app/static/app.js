@@ -23,6 +23,7 @@ const state = {
 
 let _overflowPopover = null;
 let _endpointEditForm = null;
+let _editingAlias = null;   // raw ep.alias of the endpoint currently being edited
 
 const APP_ROOT = (document.querySelector('meta[name="app-root"]')?.content || '').replace(/\/$/, '');
 const API_BASE = `${APP_ROOT}/api`;
@@ -465,7 +466,15 @@ function renderEndpoints() {
   const tpl = $('#endpointTemplate');
   if (!list || !tpl) return;
 
-  _closeEndpointEditForm();
+  // Capture edit state BEFORE touching the DOM.
+  // Do NOT call _closeEndpointEditForm() — that would clear _editingAlias.
+  const editingAlias = _editingAlias;
+  const editingTypedValue = _endpointEditForm?.querySelector('input')?.value ?? null;
+  if (_endpointEditForm) {
+    _endpointEditForm.remove();
+    _endpointEditForm = null;
+  }
+
   rememberEndpointSelections();
 
   list.replaceChildren();
@@ -479,6 +488,7 @@ function renderEndpoints() {
   });
 
   if (!state.endpoints.length) {
+    _editingAlias = null;
     const empty = document.createElement('div');
     empty.className = 'empty';
     empty.textContent = 'No registered endpoints were returned from Pexip.';
@@ -487,6 +497,7 @@ function renderEndpoints() {
   }
 
   if (!visibleEndpoints.length) {
+    _editingAlias = null;
     const empty = document.createElement('div');
     empty.className = 'empty';
     empty.textContent = `No endpoints match "${query}".`;
@@ -498,6 +509,7 @@ function renderEndpoints() {
     const scheduleStatus = getEndpointScheduleStatus(ep.alias);
     const node = tpl.content.cloneNode(true);
     const item = node.querySelector('.endpoint-item');
+    item.dataset.alias = ep.alias || '';
     const check = node.querySelector('.endpoint-check');
     const name = node.querySelector('.endpoint-name');
     const sub = node.querySelector('.endpoint-sub');
@@ -552,6 +564,22 @@ function renderEndpoints() {
 
     list.appendChild(node);
   });
+
+  // Restore the edit form for the same endpoint after the list rebuilds.
+  // Uses the stable alias (not display name) as identity.
+  if (editingAlias) {
+    const ep = state.endpoints.find(e => e.alias === editingAlias);
+    if (ep) {
+      const anchorItem = list.querySelector(`[data-alias="${CSS.escape(editingAlias)}"]`);
+      if (anchorItem) {
+        _openEndpointEditForm(ep, anchorItem, editingTypedValue);
+      } else {
+        _editingAlias = null; // filtered out by search — don't auto-restore later
+      }
+    } else {
+      _editingAlias = null; // endpoint disappeared from Pexip
+    }
+  }
 }
 
 // ── Stats row ─────────────────────────────────────────────────────────────────
@@ -1276,10 +1304,15 @@ function _closeEndpointEditForm() {
     _endpointEditForm.remove();
     _endpointEditForm = null;
   }
+  _editingAlias = null;
 }
 
-function _openEndpointEditForm(ep, anchorItem) {
+function _openEndpointEditForm(ep, anchorItem, restoredValue = null) {
+  // When called from renderEndpoints() during a refresh, _endpointEditForm has
+  // already been removed from the DOM.  When called from a user click, close
+  // any previously open form first (also clears _editingAlias).
   _closeEndpointEditForm();
+  _editingAlias = ep.alias || '';
 
   const form = document.createElement('div');
   form.className = 'ep-edit-form';
@@ -1308,8 +1341,9 @@ function _openEndpointEditForm(ep, anchorItem) {
   const nameInput = document.createElement('input');
   nameInput.type = 'text';
   nameInput.className = 'ep-edit-input';
-  nameInput.value = ep.custom_display_name || '';
+  nameInput.value = restoredValue !== null ? restoredValue : (ep.custom_display_name || '');
   nameInput.maxLength = 200;
+  nameInput.placeholder = 'Custom display name…';
   nameInput.setAttribute('aria-label', 'Custom display name');
   nameLbl.setAttribute('for', 'ep-edit-input-field');
   nameInput.id = 'ep-edit-input-field';
