@@ -270,3 +270,64 @@ class TestEndpointsApiRoute:
         data = resp.get_json()
         aliases = [ep["alias"] for ep in data["items"]]
         assert "stale-device@example.com" in aliases
+
+
+class TestEndpointOverrideResponseShape:
+    """GET /api/endpoints exposes pexip_display_name and custom_display_name fields."""
+
+    def test_response_includes_pexip_display_name(self, test_db):
+        """Each endpoint item in the response has a pexip_display_name field."""
+        app, mock_pexip = make_app(test_db)
+        mock_pexip.list_registered_endpoints.return_value = [
+            {"alias": "wspex1", "display_name": "Workstation 1",
+             "is_registered": True, "protocol": "", "node": ""},
+        ]
+        with app.test_client() as client:
+            _login_admin(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                resp = client.get("/api/endpoints")
+        ep = resp.get_json()["items"][0]
+        assert "pexip_display_name" in ep
+        assert ep["pexip_display_name"] == "Workstation 1"
+
+    def test_response_includes_custom_display_name_null_when_no_override(self, test_db):
+        """custom_display_name is None when no override has been set."""
+        app, mock_pexip = make_app(test_db)
+        mock_pexip.list_registered_endpoints.return_value = [
+            {"alias": "wspex1", "display_name": "Workstation 1",
+             "is_registered": True, "protocol": "", "node": ""},
+        ]
+        with app.test_client() as client:
+            _login_admin(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                resp = client.get("/api/endpoints")
+        ep = resp.get_json()["items"][0]
+        assert ep["custom_display_name"] is None
+        assert ep["display_name"] == "Workstation 1"
+
+    def test_alias_field_unchanged_by_override(self, test_db):
+        """The alias field is the raw Pexip alias regardless of any override."""
+        app, mock_pexip = make_app(test_db)
+        mock_pexip.list_registered_endpoints.return_value = [
+            {"alias": "wspex1", "display_name": "Workstation 1",
+             "is_registered": True, "protocol": "", "node": ""},
+        ]
+        with app.test_client() as client:
+            _login_admin(client, test_db)
+            with patch.object(Settings, "DB_PATH", test_db):
+                # Manually insert an override
+                from contextlib import closing
+                from app.database import db
+                from app.meeting_utils import now_utc, iso
+                with closing(db()) as conn:
+                    conn.execute(
+                        "INSERT INTO endpoint_display_overrides (alias_key, custom_display_name, updated_at, updated_by) "
+                        "VALUES (?, ?, ?, ?)",
+                        ("wspex1", "Custom Name", iso(now_utc()), "testuser"),
+                    )
+                    conn.commit()
+                resp = client.get("/api/endpoints")
+        ep = resp.get_json()["items"][0]
+        assert ep["alias"] == "wspex1"
+        assert ep["display_name"] == "Custom Name"
+        assert ep["pexip_display_name"] == "Workstation 1"

@@ -16,9 +16,13 @@ const state = {
 
   // Endpoint search
   endpointSearchQuery: '',
+
+  // Role
+  currentUserIsAdmin: document.querySelector('meta[name="user-is-admin"]')?.content === '1',
 };
 
 let _overflowPopover = null;
+let _endpointEditForm = null;
 
 const APP_ROOT = (document.querySelector('meta[name="app-root"]')?.content || '').replace(/\/$/, '');
 const API_BASE = `${APP_ROOT}/api`;
@@ -461,6 +465,7 @@ function renderEndpoints() {
   const tpl = $('#endpointTemplate');
   if (!list || !tpl) return;
 
+  _closeEndpointEditForm();
   rememberEndpointSelections();
 
   list.replaceChildren();
@@ -496,6 +501,7 @@ function renderEndpoints() {
     const check = node.querySelector('.endpoint-check');
     const name = node.querySelector('.endpoint-name');
     const sub = node.querySelector('.endpoint-sub');
+    const epInfo = node.querySelector('.endpoint-info');
 
     check.value = ep.alias || '';
     check.dataset.displayName = ep.display_name || ep.alias || '';
@@ -529,6 +535,19 @@ function renderEndpoints() {
       reasonSpan.className = 'ep-busy-reason';
       reasonSpan.textContent = scheduleStatus.reason;
       sub.appendChild(reasonSpan);
+    }
+
+    if (state.currentUserIsAdmin) {
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'ep-edit-btn ghost';
+      editBtn.textContent = 'Edit Name';
+      editBtn.setAttribute('aria-label', `Edit display name for ${ep.display_name || ep.alias || 'endpoint'}`);
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _openEndpointEditForm(ep, item);
+      });
+      epInfo.appendChild(editBtn);
     }
 
     list.appendChild(node);
@@ -1249,6 +1268,127 @@ function renderMonthCalendar() {
     grid.appendChild(cell);
   }
 }
+
+// ── Endpoint display-name edit form (admin only) ──────────────────────────────
+
+function _closeEndpointEditForm() {
+  if (_endpointEditForm) {
+    _endpointEditForm.remove();
+    _endpointEditForm = null;
+  }
+}
+
+function _openEndpointEditForm(ep, anchorItem) {
+  _closeEndpointEditForm();
+
+  const form = document.createElement('div');
+  form.className = 'ep-edit-form';
+  form.setAttribute('role', 'group');
+  form.setAttribute('aria-label', 'Edit endpoint display name');
+
+  // Pexip/default name row (read-only)
+  const pexipRow = document.createElement('div');
+  pexipRow.className = 'ep-edit-row';
+  const pexipLbl = document.createElement('span');
+  pexipLbl.className = 'ep-edit-label';
+  pexipLbl.textContent = 'Pexip name:';
+  const pexipVal = document.createElement('span');
+  pexipVal.className = 'ep-edit-pexip-name';
+  pexipVal.textContent = ep.pexip_display_name || ep.alias || '';
+  pexipRow.appendChild(pexipLbl);
+  pexipRow.appendChild(pexipVal);
+  form.appendChild(pexipRow);
+
+  // Custom name input row
+  const nameRow = document.createElement('div');
+  nameRow.className = 'ep-edit-row';
+  const nameLbl = document.createElement('label');
+  nameLbl.className = 'ep-edit-label';
+  nameLbl.textContent = 'Custom name:';
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.className = 'ep-edit-input';
+  nameInput.value = ep.custom_display_name || '';
+  nameInput.maxLength = 200;
+  nameInput.setAttribute('aria-label', 'Custom display name');
+  nameLbl.setAttribute('for', 'ep-edit-input-field');
+  nameInput.id = 'ep-edit-input-field';
+  nameRow.appendChild(nameLbl);
+  nameRow.appendChild(nameInput);
+  form.appendChild(nameRow);
+
+  // Inline error
+  const errDiv = document.createElement('div');
+  errDiv.className = 'ep-edit-error';
+  errDiv.setAttribute('role', 'alert');
+  form.appendChild(errDiv);
+
+  // Buttons
+  const btnsRow = document.createElement('div');
+  btnsRow.className = 'ep-edit-btns';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'primary small';
+  saveBtn.textContent = 'Save';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'ghost small';
+  cancelBtn.textContent = 'Cancel';
+
+  const restoreBtn = document.createElement('button');
+  restoreBtn.type = 'button';
+  restoreBtn.className = 'secondary small';
+  restoreBtn.textContent = 'Restore Default';
+
+  cancelBtn.addEventListener('click', () => _closeEndpointEditForm());
+
+  saveBtn.addEventListener('click', async () => {
+    errDiv.textContent = '';
+    saveBtn.disabled = true;
+    try {
+      await api('/endpoints/display-name', {
+        method: 'PUT',
+        body: JSON.stringify({ endpoint_alias: ep.alias, display_name: nameInput.value }),
+      });
+      _closeEndpointEditForm();
+      await loadEndpoints();
+    } catch (err) {
+      errDiv.textContent = getErrorText(err);
+      saveBtn.disabled = false;
+    }
+  });
+
+  restoreBtn.addEventListener('click', async () => {
+    errDiv.textContent = '';
+    restoreBtn.disabled = true;
+    try {
+      await api('/endpoints/display-name', {
+        method: 'DELETE',
+        body: JSON.stringify({ endpoint_alias: ep.alias }),
+      });
+      _closeEndpointEditForm();
+      await loadEndpoints();
+    } catch (err) {
+      errDiv.textContent = getErrorText(err);
+      restoreBtn.disabled = false;
+    }
+  });
+
+  btnsRow.appendChild(saveBtn);
+  btnsRow.appendChild(cancelBtn);
+  if (ep.custom_display_name) {
+    btnsRow.appendChild(restoreBtn);
+  }
+  form.appendChild(btnsRow);
+
+  _endpointEditForm = form;
+  anchorItem.insertAdjacentElement('afterend', form);
+  nameInput.focus();
+}
+
+// ── Calendar overflow popover ─────────────────────────────────────────────────
 
 function closeOverflowPopover() {
   if (_overflowPopover) {

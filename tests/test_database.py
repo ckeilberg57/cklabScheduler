@@ -20,6 +20,7 @@ def test_init_db_creates_all_tables(test_db_path):
         assert "meeting_endpoints" in tables
         assert "meeting_invitees" in tables
         assert "scheduler_heartbeat" in tables
+        assert "endpoint_display_overrides" in tables
 
 
 def test_init_db_is_idempotent(test_db_path):
@@ -35,6 +36,7 @@ def test_init_db_is_idempotent(test_db_path):
             }
         assert "meetings" in tables
         assert "scheduler_heartbeat" in tables
+        assert "endpoint_display_overrides" in tables
 
 
 def test_db_helper_sets_wal_mode(test_db_path):

@@ -1228,3 +1228,71 @@ body.denied-page {
   color: var(--text);
   font: inherit;
 }
+
+/* ── Endpoint display-name edit form (admin) ─────────────────────────────────── */
+.ep-edit-btn {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  padding: 2px 8px;
+  color: var(--purple);
+  border: 1px solid var(--purple);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.ep-edit-btn:hover { background: rgba(94,92,242,0.08); }
+
+.ep-edit-form {
+  background: var(--sand);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px 12px;
+  margin: 4px 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ep-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ep-edit-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+  min-width: 90px;
+  flex-shrink: 0;
+}
+
+.ep-edit-pexip-name {
+  font-size: 0.85rem;
+  color: var(--text);
+  font-style: italic;
+}
+
+.ep-edit-input {
+  flex: 1;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+}
+.ep-edit-input:focus { outline: 2px solid var(--purple); outline-offset: 1px; }
+
+.ep-edit-btns {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ep-edit-error {
+  font-size: 0.82rem;
+  color: #c0392b;
+  min-height: 1em;
+}

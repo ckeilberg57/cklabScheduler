@@ -126,6 +126,14 @@ def endpoint_matches_live(endpoint_alias, display_name, live_items):
     return False
 
 
+def load_display_overrides(conn):
+    """Return {alias_key: custom_display_name} for all admin-set overrides."""
+    rows = conn.execute(
+        "SELECT alias_key, custom_display_name FROM endpoint_display_overrides"
+    ).fetchall()
+    return {row["alias_key"]: row["custom_display_name"] for row in rows}
+
+
 def find_endpoint_participants(endpoint_alias, display_name, live_items):
     """Return all live participants matching the endpoint by alias or display name."""
     alias_key = normalize_alias(endpoint_alias)
@@ -173,16 +181,23 @@ def fetch_meeting_with_endpoints(conn, meeting_id, pexip=None):
         logger.warning("Live participant fetch failed for %s: %s", meeting["meeting_alias"], exc)
 
     live_participants = normalize_live_participants(raw_live)
+    overrides = load_display_overrides(conn)
 
     endpoints = []
     for ep in endpoint_rows:
         endpoint_alias = ep["endpoint_alias"]
-        display_name = ep["display_name"] or endpoint_alias
-        is_live = endpoint_matches_live(endpoint_alias, display_name, live_participants)
+        # pexip_display_name is the name stored at scheduling time (original Pexip name).
+        # Live matching always uses this value as the secondary signal, never the custom name.
+        pexip_display_name = ep["display_name"] or endpoint_alias
+        is_live = endpoint_matches_live(endpoint_alias, pexip_display_name, live_participants)
+        # Apply the custom override for display only; never for identity/matching.
+        alias_key = normalize_alias(endpoint_alias)
+        effective_name = overrides.get(alias_key, pexip_display_name)
         endpoints.append({
             "id": ep["id"],
             "endpoint_alias": endpoint_alias,
-            "display_name": display_name,
+            "display_name": effective_name,
+            "pexip_display_name": pexip_display_name,
             "role": ep["role"],
             "status": ep["status"],
             "dial_response": json.loads(ep["dial_response"]) if ep["dial_response"] else None,
