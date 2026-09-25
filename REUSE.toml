@@ -1,7 +1,4 @@
 version = 1
-SPDX-PackageName = "cklabScheduler"
-SPDX-PackageSupplier = "Pexip AS"
-SPDX-PackageDownloadLocation = "https://github.com/pexip-labs/cklabScheduler"
 
 [[annotations]]
 path = ["**"]

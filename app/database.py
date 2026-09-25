@@ -101,6 +101,13 @@ def init_db():
                 detail        TEXT,
                 created_at    TEXT    NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS endpoint_display_overrides (
+                alias_key           TEXT NOT NULL PRIMARY KEY,
+                custom_display_name TEXT NOT NULL,
+                updated_at          TEXT NOT NULL,
+                updated_by          TEXT NOT NULL
+            );
         """)
         conn.commit()
 
