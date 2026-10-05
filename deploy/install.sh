@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deploy/install.sh — Interactive installer for SBALKC Scheduler on Ubuntu 24.04
+# deploy/install.sh — Interactive installer for SBALKC Scheduler on Ubuntu 24.04 LTS / 26.04 LTS
 # Run as root from within the repository directory or any path; the script
 # locates the repo root relative to its own location.
 set -euo pipefail
@@ -123,10 +123,10 @@ info "Pre-flight checks"
 if [[ -f /etc/os-release ]]; then
     # shellcheck source=/dev/null
     source /etc/os-release
-    [[ "${ID:-}" == "ubuntu" && "${VERSION_ID:-}" == "24.04" ]] \
-        || die "Ubuntu 24.04 required. Detected: ${PRETTY_NAME:-unknown}."
+    [[ "${ID:-}" == "ubuntu" && ( "${VERSION_ID:-}" == "24.04" || "${VERSION_ID:-}" == "26.04" ) ]] \
+        || die "Ubuntu 24.04 LTS or 26.04 LTS required. Detected: ${PRETTY_NAME:-unknown}."
 else
-    die "/etc/os-release not found. Ubuntu 24.04 required."
+    die "/etc/os-release not found. Ubuntu 24.04 LTS or 26.04 LTS required."
 fi
 
 [[ -c /dev/tty ]] \
@@ -142,8 +142,8 @@ echo "  Pre-flight checks passed."
 info "Installing system packages"
 echo "  Running apt-get update..."
 apt-get update -qq
-echo "  Installing packages: python3.12, python3.12-venv, tzdata, sqlite3, curl, apache2, openssl, rsync"
-apt-get install -y python3.12 python3.12-venv tzdata sqlite3 curl apache2 openssl rsync
+echo "  Installing packages: python3, python3-venv, tzdata, sqlite3, curl, apache2, openssl, rsync"
+apt-get install -y python3 python3-venv tzdata sqlite3 curl apache2 openssl rsync
 echo "  Packages installed."
 
 # ── 3. Apache modules ────────────────────────────────────────────────────────
@@ -209,7 +209,7 @@ echo "  Files copied. Ownership: root:${SVC_USER}; dirs 750, files 640."
 info "Python virtual environment"
 if [[ ! -d "${VENV}" ]]; then
     echo "  Creating venv at ${VENV}..."
-    python3.12 -m venv "${VENV}"
+    python3 -m venv "${VENV}"
     echo "  Venv created."
 else
     echo "  Existing venv found — reusing."

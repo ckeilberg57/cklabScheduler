@@ -92,10 +92,10 @@ hdr "Platform"
 if [[ -f /etc/os-release ]]; then
     # shellcheck source=/dev/null
     source /etc/os-release
-    if [[ "${ID:-}" == "ubuntu" && "${VERSION_ID:-}" == "24.04" ]]; then
-        ok "Ubuntu 24.04 (${PRETTY_NAME:-})"
+    if [[ "${ID:-}" == "ubuntu" && ( "${VERSION_ID:-}" == "24.04" || "${VERSION_ID:-}" == "26.04" ) ]]; then
+        ok "Ubuntu ${VERSION_ID} LTS (${PRETTY_NAME:-})"
     else
-        fail "Expected Ubuntu 24.04; detected: ${PRETTY_NAME:-unknown}"
+        fail "Expected Ubuntu 24.04 LTS or 26.04 LTS; detected: ${PRETTY_NAME:-unknown}"
     fi
 else
     fail "/etc/os-release not found"
@@ -246,7 +246,7 @@ hdr "Python Virtual Environment"
 if [[ -f "${VENV}/bin/python" ]]; then
     ok "${VENV}/bin/python exists"
     PYVER="$("${VENV}/bin/python" --version 2>&1 || echo 'unknown')"
-    if [[ "${PYVER}" =~ Python\ 3\.1[2-9] ]]; then
+    if [[ "${PYVER}" =~ Python\ 3\.(1[2-9]|[2-9][0-9]) ]]; then
         ok "Python version: ${PYVER}"
     else
         warn "Python version: ${PYVER} (expected 3.12+)"
