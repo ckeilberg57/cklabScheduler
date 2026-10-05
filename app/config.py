@@ -1,9 +1,30 @@
+import logging
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+_config_logger = logging.getLogger(__name__)
+
+
+def _parse_endpoint_cache_seconds() -> int:
+    """Parse ENDPOINT_STATUS_CACHE_SECONDS with validation and safe fallback."""
+    raw = os.getenv("ENDPOINT_STATUS_CACHE_SECONDS", "15").strip()
+    try:
+        val = int(raw)
+        if 1 <= val <= 3600:
+            return val
+        _config_logger.warning(
+            "ENDPOINT_STATUS_CACHE_SECONDS=%d is out of range [1, 3600]; using default 15", val
+        )
+    except (ValueError, TypeError):
+        if raw not in ("", "15"):
+            _config_logger.warning(
+                "Invalid ENDPOINT_STATUS_CACHE_SECONDS=%r; using default 15", raw
+            )
+    return 15
 
 
 class Settings:
@@ -30,6 +51,10 @@ class Settings:
     ABOUT_TO_START_MINUTES = int(os.getenv("ABOUT_TO_START_MINUTES", "1"))
     DEFAULT_EXTEND_MINUTES = int(os.getenv("DEFAULT_EXTEND_MINUTES", "15"))
     POLL_SECONDS = int(os.getenv("POLL_SECONDS", "3"))
+
+    # Endpoint registration/availability cache TTL in seconds.
+    # Valid range: 1–3600.  Invalid values fall back silently to 15.
+    ENDPOINT_STATUS_CACHE_SECONDS: int = _parse_endpoint_cache_seconds()
 
     WEBRTC_BASE_URL = os.getenv("WEBRTC_BASE_URL", "")
 

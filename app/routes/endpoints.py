@@ -31,17 +31,20 @@ def _validate_display_name(name):
 @login_required
 def api_endpoints():
     try:
-        items = current_app.pexip.list_registered_endpoints()
+        items = current_app.endpoint_cache.get(current_app.pexip.list_registered_endpoints)
         with closing(db()) as conn:
             overrides = load_display_overrides(conn)
+        result = []
         for item in items:
-            alias_key = normalize_alias(item.get("alias", ""))
-            item["pexip_display_name"] = item.get("display_name") or item.get("alias") or ""
+            entry = dict(item)
+            alias_key = normalize_alias(entry.get("alias", ""))
+            entry["pexip_display_name"] = entry.get("display_name") or entry.get("alias") or ""
             custom = overrides.get(alias_key)
-            item["custom_display_name"] = custom
+            entry["custom_display_name"] = custom
             if custom:
-                item["display_name"] = custom
-        return jsonify({"ok": True, "items": items})
+                entry["display_name"] = custom
+            result.append(entry)
+        return jsonify({"ok": True, "items": result})
     except Exception:
         current_app.logger.exception("Failed to load registered endpoints")
         return jsonify({"ok": False, "items": [], "error": "Unable to load endpoints"}), 500

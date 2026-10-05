@@ -205,11 +205,12 @@ _add_env_default() {
         echo "  ${key} not found — added default: ${default}"
     fi
 }
-_add_env_default "APP_DISPLAY_NAME"      "SBALKC Scheduler"
-_add_env_default "LOCAL_AUTH_ENABLED"   "true"
-_add_env_default "ENTRA_ENABLED"        "false"
-_add_env_default "SESSION_COOKIE_SECURE" "true"
-_add_env_default "URL_PREFIX"           "/sbalkcScheduler"
+_add_env_default "APP_DISPLAY_NAME"              "SBALKC Scheduler"
+_add_env_default "LOCAL_AUTH_ENABLED"            "true"
+_add_env_default "ENTRA_ENABLED"                 "false"
+_add_env_default "SESSION_COOKIE_SECURE"         "true"
+_add_env_default "URL_PREFIX"                    "/sbalkcScheduler"
+_add_env_default "ENDPOINT_STATUS_CACHE_SECONDS" "15"
 
 # If this is the first upgrade that adds authentication, remind the operator
 # to create a local admin user before trying to log in.

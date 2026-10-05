@@ -10,11 +10,13 @@ API contract that makes those frontend behaviours correct:
   2. Selected endpoint still present → API includes it (frontend preserves selection).
   3. Selected endpoint removed → API omits it (frontend clears stale selection).
   4. Failed refresh → API returns ok=False, items=[] (frontend leaves picker alone).
-  5. "Now" is always current → API always returns the live endpoint set (no cached stale state).
+  5. Within TTL, results come from the server-side cache (one Pexip call shared).
+     After TTL, the cache refreshes and reflects updated Pexip state.
   6. Sequential refreshes reflect changes (add then remove produces consistent responses).
   7. Refresh after endpoint set becomes empty → empty items, ok=True (picker recalculates to show no endpoints).
 """
 import os
+import time
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -65,6 +67,12 @@ def _ep(alias, display_name="Room", registered=True):
 def _fetch(client, test_db):
     with patch.object(Settings, "DB_PATH", test_db):
         return client.get("/api/endpoints")
+
+
+def _expire_cache(app):
+    """Back-date the cache timestamp to force a refresh on the next request."""
+    with app.endpoint_cache._lock:
+        app.endpoint_cache._fetched_at = time.monotonic() - 3600
 
 
 # ── Test 1: Successful refresh → API returns ok=True + items ──────────────────
@@ -194,36 +202,39 @@ class TestFailedRefreshDoesNotDestroyPickerState:
         assert "Unable to load endpoints" in data.get("error", "")
 
 
-# ── Test 5: API always returns live state (no stale cached result) ─────────────
+# ── Test 5: Cache-backed API returns current state after TTL ──────────────────
 
 class TestApiAlwaysReturnsCurrentState:
     """
-    Frontend requirement 6: "now" is recalculated during refresh rather than
-    relying on a page-load time.  On the server side, this means the API
-    must query Pexip on each call — not return a cached snapshot.
+    Frontend requirement 6: "now" is recalculated during refresh.
+
+    The server-side cache means multiple browser clients share one Pexip call
+    per TTL window.  Within TTL, all calls return the cached (current) result.
+    After TTL expiry, the next call fetches fresh data from Pexip.
     """
 
-    def test_each_call_queries_pexip(self, test_db):
+    def test_calls_within_ttl_share_one_pexip_request(self, test_db):
         app, mock_pexip = _make_app(test_db, [_ep("a@example.com")])
         with app.test_client() as client:
             _login(client, test_db)
             _fetch(client, test_db)
             _fetch(client, test_db)
             _fetch(client, test_db)
-        # list_registered_endpoints must be called once per request, not cached
-        assert mock_pexip.list_registered_endpoints.call_count == 3
+        # Server-side cache: all three calls within TTL share one Pexip request
+        assert mock_pexip.list_registered_endpoints.call_count == 1
 
-    def test_updated_endpoint_list_reflected_on_next_call(self, test_db):
+    def test_updated_endpoint_list_reflected_after_ttl_expiry(self, test_db):
         app, mock_pexip = _make_app(test_db, [_ep("a@example.com")])
         with app.test_client() as client:
             _login(client, test_db)
             resp1 = _fetch(client, test_db)
             assert len(resp1.get_json()["items"]) == 1
 
-            # Simulate Pexip returning a different set on the next call
+            # Simulate Pexip returning a different set after cache expiry
             mock_pexip.list_registered_endpoints.return_value = [
                 _ep("a@example.com"), _ep("b@example.com"),
             ]
+            _expire_cache(app)
             resp2 = _fetch(client, test_db)
             assert len(resp2.get_json()["items"]) == 2
 
@@ -246,16 +257,18 @@ class TestSequentialRefreshesReflectChanges:
             resp1 = _fetch(client, test_db)
             assert [ep["alias"] for ep in resp1.get_json()["items"]] == ["a@example.com"]
 
-            # Refresh 2: "a" and "b" both registered
+            # Refresh 2: "a" and "b" both registered (after cache expiry)
             mock_pexip.list_registered_endpoints.return_value = [
                 _ep("a@example.com"), _ep("b@example.com"),
             ]
+            _expire_cache(app)
             resp2 = _fetch(client, test_db)
             aliases2 = {ep["alias"] for ep in resp2.get_json()["items"]}
             assert aliases2 == {"a@example.com", "b@example.com"}
 
-            # Refresh 3: "b" gone again (only "a" remains)
+            # Refresh 3: "b" gone again (only "a" remains, after cache expiry)
             mock_pexip.list_registered_endpoints.return_value = [_ep("a@example.com")]
+            _expire_cache(app)
             resp3 = _fetch(client, test_db)
             assert [ep["alias"] for ep in resp3.get_json()["items"]] == ["a@example.com"]
 
@@ -287,8 +300,9 @@ class TestRefreshWithEmptyEndpointList:
             resp1 = _fetch(client, test_db)
             assert len(resp1.get_json()["items"]) == 1
 
-            # All endpoints deregister
+            # All endpoints deregister; expire cache so next fetch picks up the change
             mock_pexip.list_registered_endpoints.return_value = []
+            _expire_cache(app)
             resp2 = _fetch(client, test_db)
             assert resp2.get_json()["ok"] is True
             assert resp2.get_json()["items"] == []

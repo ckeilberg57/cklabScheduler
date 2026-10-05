@@ -5,6 +5,7 @@ from flask import Flask
 
 from app.config import Settings
 from app.database import init_db
+from app.endpoint_cache import EndpointCache
 from app.pexip import PexipAPI
 
 logging.basicConfig(
@@ -31,6 +32,7 @@ def create_app():
     app.config["WTF_CSRF_TIME_LIMIT"] = None
 
     app.pexip = PexipAPI()
+    app.endpoint_cache = EndpointCache()
 
     from app.auth import init_auth
     init_auth(app)

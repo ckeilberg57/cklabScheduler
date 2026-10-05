@@ -475,11 +475,12 @@ chmod 640 "${ENV_FILE}"
     printf '\n'
 
     printf '# Scheduler\n'
-    write_env_line "APP_DISPLAY_NAME"       "${APP_DISPLAY_NAME}"
-    write_env_line "ABOUT_TO_START_MINUTES" "${ABOUT_TO_START_MINUTES}"
-    write_env_line "DEFAULT_EXTEND_MINUTES" "${DEFAULT_EXTEND_MINUTES}"
-    write_env_line "POLL_SECONDS"           "${POLL_SECONDS}"
-    write_env_line "DB_PATH"               "${DB_PATH}"
+    write_env_line "APP_DISPLAY_NAME"              "${APP_DISPLAY_NAME}"
+    write_env_line "ABOUT_TO_START_MINUTES"        "${ABOUT_TO_START_MINUTES}"
+    write_env_line "DEFAULT_EXTEND_MINUTES"        "${DEFAULT_EXTEND_MINUTES}"
+    write_env_line "POLL_SECONDS"                  "${POLL_SECONDS}"
+    write_env_line "ENDPOINT_STATUS_CACHE_SECONDS" "15"
+    write_env_line "DB_PATH"                       "${DB_PATH}"
     printf '\n'
 
     printf '# Flask session security (auto-generated; do not change unless rotating keys)\n'

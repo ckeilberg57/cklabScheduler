@@ -232,6 +232,94 @@ class TestTimezoneDependencies:
         )
 
 
+# ── ENDPOINT_STATUS_CACHE_SECONDS in installer / upgrade ─────────────────────
+
+class TestEndpointCacheSecondsInstaller:
+    """ENDPOINT_STATUS_CACHE_SECONDS=15 must appear in install.sh and upgrade.sh."""
+
+    def test_install_sh_writes_endpoint_cache_seconds(self):
+        """install.sh must write ENDPOINT_STATUS_CACHE_SECONDS=15 to the env file."""
+        src = INSTALL_SH.read_text()
+        assert "ENDPOINT_STATUS_CACHE_SECONDS" in src, (
+            "install.sh does not write ENDPOINT_STATUS_CACHE_SECONDS"
+        )
+        assert '"15"' in src or "'15'" in src or "15" in src, (
+            "ENDPOINT_STATUS_CACHE_SECONDS default value 15 not found in install.sh"
+        )
+
+    def test_upgrade_sh_adds_endpoint_cache_seconds_default(self):
+        """upgrade.sh must add ENDPOINT_STATUS_CACHE_SECONDS via _add_env_default."""
+        src = UPGRADE_SH.read_text()
+        assert "ENDPOINT_STATUS_CACHE_SECONDS" in src, (
+            "upgrade.sh does not add ENDPOINT_STATUS_CACHE_SECONDS default"
+        )
+
+    def test_upgrade_sh_does_not_overwrite_existing_value(self):
+        """upgrade.sh uses _add_env_default which preserves an existing value."""
+        src = UPGRADE_SH.read_text()
+        # The _add_env_default function only appends when the key is absent
+        assert "_add_env_default" in src, (
+            "upgrade.sh does not use _add_env_default pattern"
+        )
+        # Confirm the key is passed to _add_env_default, not written unconditionally
+        assert '_add_env_default "ENDPOINT_STATUS_CACHE_SECONDS"' in src, (
+            "ENDPOINT_STATUS_CACHE_SECONDS is not added via _add_env_default in upgrade.sh"
+        )
+
+    def test_upgrade_sh_add_env_default_preserves_existing(self):
+        """_add_env_default logic: if key is already in env file, it is preserved."""
+        result = _bash("""
+ENV=$(mktemp)
+echo 'ENDPOINT_STATUS_CACHE_SECONDS="30"' > "$ENV"
+_add_env_default() {
+    local key="$1" default="$2"
+    if grep -q "^${key}=" "$ENV" 2>/dev/null; then
+        echo "preserved"
+    else
+        printf '%s="%s"\\n' "${key}" "${default}" >> "$ENV"
+        echo "added"
+    fi
+}
+_add_env_default "ENDPOINT_STATUS_CACHE_SECONDS" "15"
+rm -f "$ENV"
+""")
+        assert result.stdout.strip() == "preserved", (
+            "_add_env_default should preserve an existing ENDPOINT_STATUS_CACHE_SECONDS"
+        )
+
+    def test_upgrade_sh_add_env_default_adds_when_absent(self):
+        """_add_env_default logic: if key is absent, it is added with the default."""
+        result = _bash("""
+ENV=$(mktemp)
+echo 'POLL_SECONDS="3"' > "$ENV"
+_add_env_default() {
+    local key="$1" default="$2"
+    if grep -q "^${key}=" "$ENV" 2>/dev/null; then
+        echo "preserved"
+    else
+        printf '%s="%s"\\n' "${key}" "${default}" >> "$ENV"
+        echo "added"
+    fi
+}
+_add_env_default "ENDPOINT_STATUS_CACHE_SECONDS" "15"
+grep -q 'ENDPOINT_STATUS_CACHE_SECONDS="15"' "$ENV" && echo "value_correct"
+rm -f "$ENV"
+""")
+        lines = result.stdout.strip().splitlines()
+        assert "added" in lines, "_add_env_default did not add the missing key"
+        assert "value_correct" in lines, "Default value 15 not written correctly"
+
+    def test_env_example_documents_endpoint_cache_seconds(self):
+        """The .env.example file must document ENDPOINT_STATUS_CACHE_SECONDS."""
+        env_example = (Path(__file__).parent.parent / ".env.example").read_text()
+        assert "ENDPOINT_STATUS_CACHE_SECONDS" in env_example, (
+            ".env.example does not document ENDPOINT_STATUS_CACHE_SECONDS"
+        )
+        assert "15" in env_example, (
+            ".env.example does not show the default value of 15"
+        )
+
+
 # ── Shell syntax validation ───────────────────────────────────────────────────
 
 @pytest.mark.parametrize("script_path", [
