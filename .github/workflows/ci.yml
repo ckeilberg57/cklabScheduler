@@ -145,8 +145,8 @@ jobs:
           import app.config
           import app.database
           import app.pexip
-          import app.endpoint_cache
           import app.meeting_utils
           import app.email_service
+          # app.endpoint_cache is added in a later feature branch
           print('All application modules import cleanly.')
           "
