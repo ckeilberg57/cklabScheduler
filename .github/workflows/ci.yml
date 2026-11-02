@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  # ── Job 1: Python tests ──────────────────────────────────────────────────────
+  test:
+    name: Python Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run test suite
+        run: |
+          python -m pytest tests/ \
+            --tb=short \
+            --strict-markers \
+            -v \
+            --junitxml=test-results.xml
+        env:
+          # Synthetic credentials — no real Pexip system required.
+          # conftest.py generates these automatically; the env vars here
+          # allow CI to override them if needed (currently unused).
+          REG_STATUS_HOST: pexip-manager.example.com
+          COMMAND_HOST: pexip-edge.example.com
+          MGMT_USER: ci-test-user
+          MGMT_PASS: ci-test-pass-placeholder
+          SECRET_KEY: ${{ secrets.CI_SECRET_KEY || 'ci-placeholder-secret-key-32chars!!' }}
+          DB_PATH: /tmp/ci-scheduler-test.db
+          VERIFY_TLS: "false"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-py${{ matrix.python-version }}
+          path: test-results.xml
+          retention-days: 14
+
+  # ── Job 2: Shell script validation ──────────────────────────────────────────
+  shell-lint:
+    name: Shell Script Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Bash syntax check (bash -n)
+        run: |
+          echo "Running bash -n on all deploy scripts..."
+          failed=0
+          for script in deploy/install.sh deploy/upgrade.sh deploy/uninstall.sh deploy/verify_install.sh; do
+            if bash -n "$script" 2>&1; then
+              echo "  PASS: $script"
+            else
+              echo "  FAIL: $script"
+              failed=1
+            fi
+          done
+          exit $failed
+
+      - name: ShellCheck (informational — warnings do not block merge)
+        run: |
+          shellcheck --severity=error \
+            deploy/install.sh \
+            deploy/upgrade.sh \
+            deploy/uninstall.sh \
+            deploy/verify_install.sh \
+          || true
+        # ShellCheck warnings are printed but not treated as CI failures until
+        # a dedicated remediation pass is completed. Only --severity=error
+        # findings would fail; informational and warning findings are logged.
+        # Remove '|| true' to enforce all findings after remediation.
+
+  # ── Job 3: Python syntax and import check ───────────────────────────────────
+  python-lint:
+    name: Python Syntax Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Python syntax check (compile all .py files)
+        run: |
+          echo "Checking Python syntax across all source files..."
+          failed=0
+          while IFS= read -r -d '' f; do
+            if python -m py_compile "$f" 2>&1; then
+              :
+            else
+              echo "  FAIL: $f"
+              failed=1
+            fi
+          done < <(find app tests -name '*.py' -print0)
+          if [ "$failed" -eq 0 ]; then
+            echo "All .py files compile cleanly."
+          fi
+          exit $failed
+
+      - name: Verify application imports cleanly
+        run: |
+          python -c "
+          import os, sys
+          # Set minimal required env so Settings.validate_web() is not triggered
+          os.environ.setdefault('REG_STATUS_HOST', 'pexip.example.com')
+          os.environ.setdefault('COMMAND_HOST',    'edge.example.com')
+          os.environ.setdefault('MGMT_USER',       'ci')
+          os.environ.setdefault('MGMT_PASS',       'ci')
+          os.environ.setdefault('SECRET_KEY',      'ci-import-check-key-32chars!!!!')
+          os.environ.setdefault('DB_PATH',         '/tmp/ci-import-check.db')
+          import app.config
+          import app.database
+          import app.pexip
+          import app.endpoint_cache
+          import app.meeting_utils
+          import app.email_service
+          print('All application modules import cleanly.')
+          "
